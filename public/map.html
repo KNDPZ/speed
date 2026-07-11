@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Global Internet Speed Map — Crossbench by playy.online</title>
+<meta name="description" content="Live world map of internet speeds from Crossbench testers, plus animated lines showing your real ping to Cloudflare, Netflix and other test servers. 3D globe or 2D map — last 24 hours, 7 days or 30 days.">
+<link rel="canonical" href="https://speed.playy.online/map.html">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#04070F; --panel:rgba(10,18,32,.88); --ink:#D9F3EF; --muted:#5E7C8C;
+    --cyan:#38E0C7; --magenta:#FF3FA4; --line:rgba(56,224,199,.22); --line-soft:rgba(56,224,199,.10);
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace; --disp:'Space Grotesk',system-ui,sans-serif;
+    --c-fast:#38E0C7; --c-good:#5BD97A; --c-mid:#F0C04B; --c-slow:#F08A4B; --c-poor:#E85D5D;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--bg);color:var(--ink);font-family:var(--disp);overflow:hidden;}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:90;opacity:.45;
+    background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.13) 3px 4px);}
+  #globediv{position:fixed;inset:0;}
+
+  .hud.top{position:fixed;z-index:60;top:0;left:0;right:0;display:flex;align-items:center;gap:12px;
+    flex-wrap:wrap;padding:14px 18px;background:linear-gradient(180deg,rgba(4,7,15,.92),transparent);}
+  .brand{font-weight:700;font-size:17px;letter-spacing:-.01em;}
+  .brand .tick{color:var(--cyan);}
+  .brand a{color:inherit;text-decoration:none;}
+  .sub{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;}
+  .seg{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--panel);backdrop-filter:blur(6px);}
+  .seg button{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;background:none;border:none;
+    color:var(--muted);padding:8px 15px;cursor:pointer;}
+  .seg button.on{background:rgba(56,224,199,.14);color:var(--cyan);}
+  .seg button.srv.on{background:rgba(255,63,164,.14);color:var(--magenta);}
+  .seg button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px;}
+  .spacer{flex:1;}
+  .back{font-family:var(--mono);font-size:11.5px;color:var(--cyan);text-decoration:none;
+    border:1px solid var(--line);border-radius:999px;padding:8px 15px;background:var(--panel);}
+
+  /* ═══ all floating windows live in this LEFT rail ═══ */
+  #rail{position:fixed;z-index:70;left:18px;top:70px;bottom:18px;width:284px;
+    max-width:calc(100vw - 36px);display:flex;flex-direction:column;gap:12px;
+    overflow-y:auto;pointer-events:none;scrollbar-width:thin;}
+  #rail>*{pointer-events:auto;flex:none;}
+  .win{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:12px 15px;backdrop-filter:blur(6px);}
+  .ttl{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--cyan);margin-bottom:6px;}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:12px;font-family:var(--mono);
+    font-size:11.5px;padding:2.5px 0;color:var(--muted);}
+  .row b{color:var(--ink);font-weight:600;text-align:right;font-variant-numeric:tabular-nums;}
+  .dot{width:9px;height:9px;border-radius:50%;box-shadow:0 0 8px currentColor;flex:none;}
+  .dia{width:9px;height:9px;transform:rotate(45deg);box-shadow:0 0 8px currentColor;flex:none;}
+  .lrow{display:flex;align-items:center;gap:8px;justify-content:flex-start;}
+
+  #banner{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--muted);
+    text-align:center;display:none;}
+
+  #panel{display:none;border-color:var(--cyan);box-shadow:0 0 28px rgba(56,224,199,.2);}
+  #panel.srv{border-color:var(--magenta);box-shadow:0 0 28px rgba(255,63,164,.2);}
+  #panel h3{font-size:14px;display:flex;align-items:center;gap:8px;}
+  #panel .close{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;
+    font-family:var(--mono);font-size:14px;}
+  #panel .rows{margin-top:8px;}
+  #panel .rows .row{border-top:1px solid var(--line-soft);padding:3.5px 0;}
+  #panel .badge{font-family:var(--mono);font-size:10px;letter-spacing:.08em;padding:2px 8px;
+    border-radius:999px;border:1px solid currentColor;}
+  #panel .note{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px;line-height:1.6;}
+
+  #loadmsg{position:fixed;z-index:55;inset:0;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:.2em;text-transform:uppercase;}
+  @media(max-width:680px){ .sub{display:none;} #rail{width:240px;} #stats{display:none;} }
+  @media (prefers-reduced-motion:reduce){ body::after{display:none;} }
+</style>
+</head>
+<body>
+<div id="globediv"></div>
+<div id="loadmsg">◢ initializing telemetry ◣</div>
+
+<div class="hud top">
+  <div class="brand"><a href="./">Crossbench<span class="tick">_</span></a></div>
+  <div class="sub">Global connection telemetry</div>
+  <div class="seg" role="tablist" aria-label="View">
+    <button id="v3d" class="on">3D GLOBE</button><button id="v2d">2D MAP</button>
+  </div>
+  <div class="seg" role="tablist" aria-label="Time range">
+    <button data-r="24h" class="on">24 H</button><button data-r="7d">7 D</button><button data-r="30d">30 D</button>
+  </div>
+  <div class="seg"><button id="lnkBtn" class="srv on">◆ MY LINKS: ON</button></div>
+  <div class="spacer"></div>
+  <a class="back" href="./">← RUN A SPEED TEST</a>
+</div>
+
+<!-- every floating window sits in this left rail -->
+<div id="rail">
+  <div class="win" id="banner">DEMO DATA — deploy the worker to go live</div>
+
+  <div class="win" id="panel" role="dialog" aria-label="Details">
+    <h3><span id="pGlyph">◈</span><span id="pTitle"></span><button class="close" id="pClose" aria-label="Close">✕</button></h3>
+    <div class="rows" id="pRows"></div>
+    <div class="note" id="pNote"></div>
+  </div>
+
+  <div class="win" id="conn">
+    <div class="ttl">◆ Your connections</div>
+    <div class="row"><span>Your location</span><b id="cLoc">detecting…</b></div>
+    <div class="row"><span>Servers linked</span><b id="cSrv">—</b></div>
+    <div class="row"><span>Best ping</span><b id="cBest">—</b></div>
+    <div class="row"><span>Median ping</span><b id="cMed">—</b></div>
+  </div>
+
+  <div class="win" id="stats">
+    <div class="ttl">◈ Network status</div>
+    <div class="row"><span>Tests reported</span><b id="stTests">—</b></div>
+    <div class="row"><span>Locations</span><b id="stLocs">—</b></div>
+    <div class="row"><span>Median download</span><b id="stDown">—</b></div>
+    <div class="row"><span>Median ping</span><b id="stPing">—</b></div>
+    <div class="row"><span>Window</span><b id="stRange">24 h</b></div>
+  </div>
+
+  <div class="win">
+    <div class="ttl">Legend</div>
+    <div class="row lrow"><span class="dot" style="background:var(--c-fast);color:var(--c-fast)"></span>testers ≥100 Mbps</div>
+    <div class="row lrow"><span class="dot" style="background:var(--c-good);color:var(--c-good)"></span>50–100 Mbps</div>
+    <div class="row lrow"><span class="dot" style="background:var(--c-mid);color:var(--c-mid)"></span>25–50 Mbps</div>
+    <div class="row lrow"><span class="dot" style="background:var(--c-slow);color:var(--c-slow)"></span>10–25 Mbps</div>
+    <div class="row lrow"><span class="dot" style="background:var(--c-poor);color:var(--c-poor)"></span>&lt;10 Mbps</div>
+    <div class="row lrow"><span class="dia" style="background:var(--magenta);color:var(--magenta)"></span>test server (edge)</div>
+    <div class="row lrow"><span style="width:14px;height:2px;background:var(--cyan);box-shadow:0 0 6px var(--cyan);flex:none;"></span>your live ping link</div>
+  </div>
+</div>
+
+<script src="https://cdn.amcharts.com/lib/5/index.js"></script>
+<script src="https://cdn.amcharts.com/lib/5/map.js"></script>
+<script src="https://cdn.amcharts.com/lib/5/geodata/worldLow.js"></script>
+<script>
+(()=>{
+"use strict";
+/* API is same-origin (/api/*) — this page is served by the same worker. */
+const $=id=>document.getElementById(id);
+const fmt=(n,d=1)=>n==null?"—":(n>=100?Math.round(n):(+n).toFixed(d));
+const speedColor=d=> d>=100?"#38E0C7": d>=50?"#5BD97A": d>=25?"#F0C04B": d>=10?"#F08A4B":"#E85D5D";
+const speedLabel=d=> d>=100?"BLAZING": d>=50?"FAST": d>=25?"DECENT": d>=10?"SLOW":"STRUGGLING";
+const pingHex=p=> p<30?0x38E0C7: p<60?0x5BD97A: p<100?0xF0C04B:0xE85D5D;
+const median=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?s[s.length>>1]:null;};
+
+/* ============ measured servers (same set as index.html) ============ */
+const HOSTS=[
+ ["Cloudflare","speed.cloudflare.com",()=> "https://speed.cloudflare.com/__down?bytes=0&cb="+Math.random()],
+ ["Fast.com (Netflix)","api.fast.com",()=> "https://api.fast.com/netflix/speedtest/v2?https=true&token=YXNkZmFzZGxmbnNkYWZoYXNkZmhrYWxm&urlCount=1&cb="+Math.random()],
+ ["jsDelivr","cdn.jsdelivr.net",()=> "https://cdn.jsdelivr.net/npm/typescript@5.4.5/package.json?cb="+Math.random()],
+ ["jsDelivr · Fastly","fastly.jsdelivr.net",()=> "https://fastly.jsdelivr.net/npm/typescript@5.4.5/package.json?cb="+Math.random()],
+ ["unpkg","unpkg.com",()=> "https://unpkg.com/typescript@5.4.5/package.json?cb="+Math.random()],
+ ["cdnjs","cdnjs.cloudflare.com",()=> "https://cdnjs.cloudflare.com/ajax/libs/js-cookie/3.0.5/js.cookie.min.js?cb="+Math.random()],
+ ["GitHub raw","raw.githubusercontent.com",()=> "https://raw.githubusercontent.com/dwyl/english-words/master/README.md?cb="+Math.random()],
+ ["Wikimedia","upload.wikimedia.org",()=> "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Pizigani_1367_Chart_10MB.jpg/120px-Pizigani_1367_Chart_10MB.jpg?cb="+Math.random()],
+ ["Statically","cdn.statically.io",()=> "https://cdn.statically.io/gh/dwyl/english-words/master/README.md?cb="+Math.random()]
+];
+
+/* ============ tester data ============ */
+let points=[];
+const DEMO=[["Manila","PH",14.6,121.0],["Cebu","PH",10.3,123.9],["Cagayan de Oro","PH",8.48,124.65],
+["Tokyo","JP",35.7,139.7],["Seoul","KR",37.6,127.0],["Singapore","SG",1.35,103.8],["Jakarta","ID",-6.2,106.8],
+["Bangkok","TH",13.8,100.5],["Mumbai","IN",19.1,72.9],["Dubai","AE",25.2,55.3],["Sydney","AU",-33.9,151.2],
+["London","GB",51.5,-0.13],["Paris","FR",48.9,2.35],["Berlin","DE",52.5,13.4],["Madrid","ES",40.4,-3.7],
+["Amsterdam","NL",52.4,4.9],["Stockholm","SE",59.3,18.1],["Istanbul","TR",41.0,28.98],["Cairo","EG",30.0,31.2],
+["Lagos","NG",6.5,3.4],["Johannesburg","ZA",-26.2,28.0],["New York","US",40.7,-74.0],["Los Angeles","US",34.05,-118.2],
+["Chicago","US",41.9,-87.6],["Seattle","US",47.6,-122.3],["Toronto","CA",43.7,-79.4],["Mexico City","MX",19.4,-99.1],
+["São Paulo","BR",-23.55,-46.6],["Buenos Aires","AR",-34.6,-58.4],["Santiago","CL",-33.4,-70.7],["Honolulu","US",21.3,-157.9]];
+function demoData(range){
+  const mult={"24h":1,"7d":4,"30d":11}[range]||1;
+  let seed=range.length*97;
+  const rnd=()=>{seed=(seed*9301+49297)%233280;return seed/233280;};
+  return DEMO.map(([city,country,lat,lon])=>{
+    const base=8+rnd()*220;
+    return {city,country,lat,lon,down:+base.toFixed(1),up:+(base*(.15+rnd()*.5)).toFixed(1),
+      ping:Math.round(5+rnd()*120),n:Math.max(1,Math.round(rnd()*40*mult))};
+  });
+}
+async function fetchData(range){
+  try{
+    const r=await fetch(`/api/stats?range=${range}`,{signal:AbortSignal.timeout(8000)});
+    if(r.ok){const j=await r.json();
+      if(Array.isArray(j)&&j.length){$("banner").style.display="none";return j;}}
+  }catch{}
+  $("banner").style.display="block";
+  return demoData(range);
+}
+function updateStats(range){
+  const tests=points.reduce((a,p)=>a+(p.n||1),0);
+  $("stTests").textContent=tests.toLocaleString();
+  $("stLocs").textContent=points.length;
+  $("stDown").textContent=fmt(median(points.map(p=>p.down)))+" Mbps";
+  $("stPing").textContent=fmt(median(points.map(p=>p.ping)),0)+" ms";
+  $("stRange").textContent={"24h":"24 h","7d":"7 days","30d":"30 days"}[range];
+}
+
+/* ============ inspector panel (left rail) ============ */
+const panel=$("panel");
+$("pClose").addEventListener("click",()=>panel.style.display="none");
+function showPanel(item,isServer){
+  panel.classList.toggle("srv",!!isServer);
+  $("pGlyph").textContent=isServer?"◆":"◈";
+  $("pGlyph").style.color=isServer?"var(--magenta)":speedColor(item.down||0);
+  const rows=$("pRows");rows.innerHTML="";
+  const add=(k,v)=>{if(v==null||v==="")return;
+    const d=document.createElement("div");d.className="row";
+    d.innerHTML=`<span>${k}</span><b>${v}</b>`;rows.appendChild(d);};
+  if(isServer){
+    $("pTitle").textContent=item.name;
+    add("Host",item.host);add("Server IP",item.ip);
+    add("Your ping",item.ping!=null?fmt(item.ping,0)+" ms":"—");
+    add("Edge location",[item.city,item.country].filter(Boolean).join(", "));
+    add("Network",String(item.org||"").slice(0,30));
+    $("pNote").textContent="◆ Anycast CDN: this is the edge nearest to YOU right now — testers elsewhere reach a different edge of the same network.";
+  }else{
+    $("pTitle").textContent=`${item.city||"Unknown"}, ${item.country||""}`;
+    add("Status",`<span class="badge" style="color:${speedColor(item.down)}">${speedLabel(item.down)}</span>`);
+    add("Avg download",fmt(item.down)+" Mbps");
+    add("Avg upload",fmt(item.up)+" Mbps");
+    add("Avg ping",fmt(item.ping,0)+" ms");
+    add("Tests in window",(item.n||1).toLocaleString());
+    $("pNote").textContent="◈ Area aggregate of anonymous tests. Individual results and tester IP addresses are never collected or shown.";
+  }
+  panel.style.display="block";
+}
+
+/* ============ chart (amCharts 5 — animated lines, like the amcharts demo) ============ */
+let root,chart,pointSeries,serverSeries,userSeries,rotateAnim,resumeTimer;
+const lineSeriesByColor={},packetAnims=[];
+function makeTooltip(hex){
+  const t=am5.Tooltip.new(root,{getFillFromSprite:false,autoTextColor:false});
+  t.get("background").setAll({fill:am5.color(0x060D18),fillOpacity:.93,
+    stroke:am5.color(hex),strokeOpacity:.9,strokeWidth:1,shadowColor:am5.color(hex),
+    shadowBlur:16,shadowOpacity:.35});
+  t.label.setAll({fill:am5.color(0xD9F3EF),fontSize:12,fontFamily:"'IBM Plex Mono',monospace"});
+  return t;
+}
+function startSpin(){
+  stopSpin();
+  const from=chart.get("rotationX");
+  rotateAnim=chart.animate({key:"rotationX",from,to:from+360,duration:80000,loops:Infinity});
+}
+function stopSpin(){ if(rotateAnim){rotateAnim.stop();rotateAnim=null;} }
+function pauseSpin(){
+  if(mode!=="3d")return;
+  stopSpin();clearTimeout(resumeTimer);
+  resumeTimer=setTimeout(startSpin,4000);
+}
+function buildChart(){
+  root=am5.Root.new("globediv");
+  chart=root.container.children.push(am5map.MapChart.new(root,{
+    panX:"rotateX",panY:"rotateY",wheelY:"zoom",
+    projection:am5map.geoOrthographic(),paddingTop:56,paddingBottom:26
+  }));
+  const bg=chart.series.push(am5map.MapPolygonSeries.new(root,{}));
+  bg.mapPolygons.template.setAll({fill:am5.color(0x04101E),fillOpacity:1,
+    stroke:am5.color(0x38E0C7),strokeOpacity:.28,strokeWidth:1.2});
+  bg.data.push({geometry:am5map.getGeoRectangle(90,180,-90,-180)});
+  const poly=chart.series.push(am5map.MapPolygonSeries.new(root,{
+    geoJSON:am5geodata_worldLow,exclude:["AQ"]}));
+  poly.mapPolygons.template.setAll({fill:am5.color(0x0B2A3A),
+    stroke:am5.color(0x40F0D2),strokeOpacity:.5,strokeWidth:.5,interactive:false});
+  const grat=chart.series.push(am5map.GraticuleSeries.new(root,{step:15}));
+  grat.mapLines.template.setAll({stroke:am5.color(0x38E0C7),strokeOpacity:.07});
+
+  // connection lines — one series per ping-color for clean per-line styling
+  [0x38E0C7,0x5BD97A,0xF0C04B,0xE85D5D].forEach(hex=>{
+    const ls=chart.series.push(am5map.MapLineSeries.new(root,{}));
+    ls.mapLines.template.setAll({stroke:am5.color(hex),strokeOpacity:.5,strokeWidth:1.4,
+      shadowColor:am5.color(hex),shadowBlur:8,shadowOpacity:.6});
+    const ps=chart.series.push(am5map.MapPointSeries.new(root,{}));
+    ps.bullets.push(r=>am5.Bullet.new(r,{sprite:am5.Circle.new(r,{
+      radius:2.6,fill:am5.color(hex),shadowColor:am5.color(hex),shadowBlur:10,shadowOpacity:.9})}));
+    lineSeriesByColor[hex]={lines:ls,packets:ps};
+  });
+
+  // tester glow points — readable tooltip with dark background
+  pointSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
+  pointSeries.set("tooltip",makeTooltip(0x38E0C7));
+  pointSeries.bullets.push((r,s,dataItem)=>{
+    const d=dataItem.dataContext,c=am5.color(speedColor(d.down));
+    const cont=am5.Container.new(r,{cursorOverStyle:"pointer",
+      tooltipText:`[bold]${d.city||"Unknown"}, ${d.country||""}[/]\n↓ ${fmt(d.down)} Mbps · ↑ ${fmt(d.up)} Mbps\nping ${fmt(d.ping,0)} ms · ${d.n||1} tests · click for details`});
+    cont.children.push(am5.Circle.new(r,{radius:9,fill:c,fillOpacity:.22}));
+    cont.children.push(am5.Circle.new(r,{radius:3.4,fill:c}));
+    cont.events.on("click",()=>showPanel(d,false));
+    return am5.Bullet.new(r,{sprite:cont});
+  });
+
+  // server diamonds
+  serverSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
+  serverSeries.set("tooltip",makeTooltip(0xFF3FA4));
+  serverSeries.bullets.push((r,s,dataItem)=>{
+    const d=dataItem.dataContext;
+    const cont=am5.Container.new(r,{cursorOverStyle:"pointer",
+      tooltipText:`[bold]◆ ${d.name}[/]\n${d.host}\nyour ping: ${d.ping!=null?fmt(d.ping,0)+" ms":"—"} · click for details`});
+    cont.children.push(am5.Rectangle.new(r,{width:16,height:16,centerX:am5.p50,centerY:am5.p50,
+      rotation:45,fill:am5.color(0xFF3FA4),fillOpacity:.2}));
+    cont.children.push(am5.Rectangle.new(r,{width:7,height:7,centerX:am5.p50,centerY:am5.p50,
+      rotation:45,fill:am5.color(0xFF3FA4)}));
+    cont.events.on("click",()=>showPanel(d,true));
+    return am5.Bullet.new(r,{sprite:cont});
+  });
+
+  // YOU — pulsing origin marker
+  userSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
+  userSeries.set("tooltip",makeTooltip(0x38E0C7));
+  userSeries.bullets.push((r,s,dataItem)=>{
+    const d=dataItem.dataContext;
+    const cont=am5.Container.new(r,{tooltipText:`[bold]◎ YOU[/]\n${d.label||""}`});
+    const halo=am5.Circle.new(r,{radius:6,fill:am5.color(0x38E0C7),fillOpacity:.35});
+    halo.animate({key:"radius",from:6,to:18,duration:1600,loops:Infinity});
+    halo.animate({key:"fillOpacity",from:.35,to:0,duration:1600,loops:Infinity});
+    cont.children.push(halo);
+    cont.children.push(am5.Circle.new(r,{radius:4,fill:am5.color(0x38E0C7),
+      stroke:am5.color(0xFFFFFF),strokeWidth:1.2}));
+    return am5.Bullet.new(r,{sprite:cont});
+  });
+
+  chart.chartContainer.get("background").events.on("pointerdown",pauseSpin);
+  poly.mapPolygons.template.events.on("pointerdown",pauseSpin);
+  startSpin();
+  chart.appear(800,100);
+}
+function setGlobePoints(){
+  pointSeries.data.setAll(points.map(p=>({geometry:{type:"Point",coordinates:[p.lon,p.lat]},...p})));
+}
+
+/* ============ your live connections (the animated-lines part) ============ */
+let userLoc=null,servers=[];
+async function detectUser(){
+  try{
+    const j=await fetch("https://speed.cloudflare.com/meta",{cache:"no-store",signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(j.latitude!=null)return{lat:+j.latitude,lon:+j.longitude,label:[j.city,j.country].filter(Boolean).join(", ")};
+  }catch{}
+  try{
+    const j=await fetch("https://ipwho.is/",{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(j.latitude!=null)return{lat:j.latitude,lon:j.longitude,label:[j.city,j.country_code].filter(Boolean).join(", ")};
+  }catch{}
+  return null;
+}
+async function pingHost(urlFn){
+  const t=[];
+  for(let i=0;i<2;i++){
+    const t0=performance.now();
+    try{
+      const r=await fetch(urlFn(),{cache:"no-store",signal:AbortSignal.timeout(4000)});
+      if(!r.ok)throw 0;
+      await r.body?.cancel?.();
+      t.push(performance.now()-t0);
+    }catch{}
+  }
+  return t.length?Math.round(Math.min(...t)):null;
+}
+async function loadServer([name,host,pingUrl]){
+  try{
+    const [dns,ping]=await Promise.all([
+      fetch(`https://dns.google/resolve?name=${host}&type=A`,{cache:"no-store"}).then(r=>r.json()),
+      pingHost(pingUrl)
+    ]);
+    const ip=((dns.Answer||[]).find(x=>x.type===1)||{}).data;
+    if(!ip)return null;
+    const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(!g||g.success===false||g.latitude==null)return null;
+    return{name,host,ip,ping,lat:g.latitude,lon:g.longitude,
+      org:(g.connection&&g.connection.org)||"",city:g.city||"",country:g.country_code||""};
+  }catch{return null;}
+}
+function drawConnections(){
+  serverSeries.data.setAll(servers.map(s=>({geometry:{type:"Point",coordinates:[s.lon,s.lat]},...s})));
+  if(!userLoc)return;
+  userSeries.data.setAll([{geometry:{type:"Point",coordinates:[userLoc.lon,userLoc.lat]},label:userLoc.label}]);
+  servers.forEach(s=>{
+    const hex=pingHex(s.ping??999),grp=lineSeriesByColor[hex];
+    const ldi=grp.lines.pushDataItem({geometry:{type:"LineString",
+      coordinates:[[userLoc.lon,userLoc.lat],[s.lon,s.lat]]}});
+    // traveling packet: speed proportional to your real ping (lower ping = faster pulse)
+    const pdi=grp.packets.pushDataItem({lineDataItem:ldi,positionOnLine:0});
+    const dur=Math.max(1100,Math.min(4200,(s.ping??150)*22));
+    packetAnims.push(pdi.animate({key:"positionOnLine",from:0,to:1,
+      duration:dur,loops:Infinity,easing:am5.ease.inOut(am5.ease.quad)}));
+  });
+  // connections summary window
+  const ps=servers.map(s=>s.ping).filter(p=>p!=null);
+  $("cLoc").textContent=userLoc.label||"located";
+  $("cSrv").textContent=servers.length+" / "+HOSTS.length;
+  $("cBest").textContent=ps.length?Math.min(...ps)+" ms":"—";
+  $("cMed").textContent=ps.length?median(ps)+" ms":"—";
+}
+function setLinksVisible(on){
+  const m=on?"show":"hide";
+  serverSeries[m]();userSeries[m]();
+  Object.values(lineSeriesByColor).forEach(g=>{g.lines[m]();g.packets[m]();});
+}
+
+/* ============ controls ============ */
+let mode="3d",range="24h";
+function setMode(m){
+  mode=m;panel.style.display="none";
+  $("v3d").classList.toggle("on",m==="3d");
+  $("v2d").classList.toggle("on",m==="2d");
+  if(m==="3d"){
+    chart.set("projection",am5map.geoOrthographic());
+    chart.set("panY","rotateY");
+    startSpin();
+  }else{
+    stopSpin();clearTimeout(resumeTimer);
+    chart.set("projection",am5map.geoEquirectangular()); // panX stays rotateX → infinite left-right scroll
+    chart.set("panY","translateY");
+    chart.animate({key:"rotationY",to:0,duration:600});
+  }
+}
+$("v3d").addEventListener("click",()=>setMode("3d"));
+$("v2d").addEventListener("click",()=>setMode("2d"));
+document.querySelectorAll("[data-r]").forEach(b=>b.addEventListener("click",async()=>{
+  document.querySelectorAll("[data-r]").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on");range=b.dataset.r;
+  points=await fetchData(range);setGlobePoints();updateStats(range);
+}));
+let linksOn=true;
+$("lnkBtn").addEventListener("click",()=>{
+  linksOn=!linksOn;
+  $("lnkBtn").classList.toggle("on",linksOn);
+  $("lnkBtn").textContent=linksOn?"◆ MY LINKS: ON":"◆ MY LINKS: OFF";
+  setLinksVisible(linksOn);
+});
+
+/* ============ boot ============ */
+(async()=>{
+  buildChart();
+  points=await fetchData(range);
+  setGlobePoints();updateStats(range);
+  $("loadmsg").remove();
+  // locate user + geolocate servers + measure real pings, then animate the links
+  const [u,...srv]=await Promise.all([detectUser(),...HOSTS.map(loadServer)]);
+  userLoc=u;servers=srv.filter(Boolean);
+  drawConnections();
+  if(!linksOn)setLinksVisible(false);
+})();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+name = "crossbench"
+main = "worker.mjs"
+compatibility_date = "2025-01-01"
+
+# The whole site is served by this worker (same pattern as tongits):
+# static files from ./public, API on /api/* — one deploy, one domain.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Custom domain — attach speed.playy.online to THIS worker
+# (dashboard → worker → Settings → Domains & Routes → Add Domain), or:
+routes = [
+  { pattern = "speed.playy.online", custom_domain = true }
+]
+
+[[durable_objects.bindings]]
+name = "SPEED_DB"
+class_name = "SpeedDB"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SpeedDB"]

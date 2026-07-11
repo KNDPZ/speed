@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Speed Test Result — Crossbench by playy.online</title>
+<meta name="description" content="A shared internet speed test result: download speed, upload speed, ping and jitter measured across multiple servers on Crossbench.">
+<meta name="robots" content="noindex,follow">
+<meta property="og:title" content="My internet speed test result">
+<meta property="og:description" content="Download, upload, ping and jitter measured against 9 servers at once. Test yours free at speed.playy.online.">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--radius:10px;--mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;--disp:'Space Grotesk',system-ui,sans-serif;
+    --blue:#5B8DEF;--grade-exc:#4FBF7A;--grade-good:#8FCB5B;--grade-fair:#F0A04B;--grade-poor:#E06060;}
+  [data-theme="dark"]{--bg:#04070F;--panel:#0A1220;--panel-2:#0D1626;--ink:#D9F3EF;--muted:#5E7C8C;
+    --line:rgba(56,224,199,.22);--line-soft:rgba(56,224,199,.09);--chip:#0A1526;--blue:#38E0C7;
+    --grade-exc:#38E0C7;--grade-good:#5BD97A;--grade-fair:#F0C04B;--grade-poor:#E85D5D;
+    --bg-img:radial-gradient(900px 540px at 72% -20%,rgba(56,224,199,.08),transparent 60%),
+      radial-gradient(760px 480px at -10% 110%,rgba(167,139,250,.07),transparent 60%);}
+  [data-theme="dark"] body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:99;opacity:.4;
+    background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.12) 3px 4px);}
+  [data-theme="dark"] .cta a.main{color:#04121A;box-shadow:0 0 18px rgba(56,224,199,.35);}
+  [data-theme="light"]{--bg:#F6F1E7;--panel:#FFFDF7;--panel-2:#FAF5EA;--ink:#241D12;--muted:#6E6350;
+    --line:#E3D8C4;--line-soft:#EEE5D3;--chip:#F3EDDF;--blue:#2E6BE6;
+    --grade-exc:#1E8E4E;--grade-good:#5B9E2D;--grade-fair:#C97A17;--grade-poor:#C43D3D;
+    --bg-img:radial-gradient(800px 480px at 85% -10%,rgba(46,107,230,.15),transparent 60%),
+      radial-gradient(700px 420px at -8% 30%,rgba(217,122,26,.16),transparent 60%),
+      linear-gradient(180deg,#FDF8EE,#F3EEE2);}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);background-image:var(--bg-img);background-attachment:fixed;color:var(--ink);
+    font-family:var(--disp);min-height:100vh;padding:26px 18px 60px;}
+  .wrap{max-width:760px;margin:0 auto;}
+  nav{display:flex;gap:18px;margin-bottom:16px;font-family:var(--mono);font-size:12px;}
+  nav a{text-decoration:none;color:var(--muted);} nav a:hover{color:var(--blue);}
+  h1{font-size:22px;letter-spacing:-.02em;} h1 .tick{color:var(--blue);}
+  .meta{font-family:var(--mono);font-size:12px;color:var(--muted);margin:6px 0 18px;line-height:1.7;}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;}
+  .cell{background:var(--panel);padding:15px 16px;}
+  .lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);}
+  .val{font-family:var(--mono);font-weight:600;font-size:30px;margin-top:6px;font-variant-numeric:tabular-nums;}
+  .val small{font-size:11px;font-weight:400;color:var(--muted);margin-left:4px;}
+  .cell.primary .val{color:var(--blue);font-size:36px;}
+  .quality{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+  .q{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;}
+  .q .n{font-size:12px;font-weight:600;} .q .g{font-family:var(--mono);font-weight:600;font-size:16px;margin-top:6px;}
+  .g3{color:var(--grade-exc);} .g2{color:var(--grade-good);} .g1{color:var(--grade-fair);} .g0{color:var(--grade-poor);}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);overflow:hidden;margin-bottom:14px;font-size:13px;}
+  th,td{padding:9px 12px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:500;border-bottom:1px solid var(--line);}
+  td:first-child,th:first-child{text-align:left;font-family:var(--disp);font-weight:600;}
+  tr+tr td{border-top:1px solid var(--line-soft);}
+  td.na{color:var(--muted);}
+  .cta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:18px 0;}
+  .cta a.main{background:var(--blue);color:#fff;text-decoration:none;font-weight:600;
+    border-radius:999px;padding:12px 26px;font-size:15px;}
+  #themeBtn{font-family:var(--mono);font-size:12px;background:var(--panel);color:var(--ink);
+    border:1px solid var(--line);border-radius:999px;padding:9px 15px;cursor:pointer;}
+  #err{display:none;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px;font-size:14px;line-height:1.6;color:var(--muted);}
+  footer{margin-top:24px;font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;}
+  @media(max-width:620px){.grid,.quality{grid-template-columns:1fr 1fr;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a href="./">⚡ Speed Test</a>
+    <a href="map.html">🌍 Live Global Map</a>
+    <button id="themeBtn" style="margin-left:auto;">☀ Light</button>
+  </nav>
+
+  <h1>Speed test result<span class="tick">_</span></h1>
+  <div class="meta" id="meta">loading result…</div>
+
+  <div id="err">This result link couldn't be loaded — it may have expired or been mistyped.
+    You can <a href="./">run a fresh internet speed test</a> in about a minute.</div>
+
+  <div id="content" style="display:none;">
+    <div class="grid">
+      <div class="cell primary"><div class="lbl">Download</div><div class="val" id="rDown">—<small>Mbps</small></div></div>
+      <div class="cell"><div class="lbl">Upload</div><div class="val" id="rUp">—<small>Mbps</small></div></div>
+      <div class="cell"><div class="lbl">Ping</div><div class="val" id="rPing">—<small>ms</small></div></div>
+      <div class="cell"><div class="lbl">Jitter</div><div class="val" id="rJit">—<small>ms</small></div></div>
+    </div>
+    <div class="quality" id="quality"></div>
+    <table id="tbl">
+      <thead><tr><th>Server</th><th>Ping</th><th>Jitter</th><th>Down</th><th>Up</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+
+  <div class="cta">
+    <a class="main" href="./">Test your own internet speed →</a>
+    <span style="font-family:var(--mono);font-size:12px;color:var(--muted);">free · multi-server · ~60 seconds</span>
+  </div>
+
+  <footer>Crossbench Speed Test · <a href="https://playy.online" style="color:var(--blue);">playy.online</a></footer>
+</div>
+
+<script>
+(()=>{
+"use strict";
+const API_BASE=""; // same-origin: /api/* served by the same worker
+const $=id=>document.getElementById(id);
+const fmt=(n,d=1)=>n==null?"—":(n>=100?Math.round(n).toString():(+n).toFixed(d));
+
+const themeBtn=$("themeBtn");
+themeBtn.addEventListener("click",()=>{
+  const t=document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark";
+  document.documentElement.setAttribute("data-theme",t);
+  themeBtn.textContent=t==="dark"?"☀ Light":"● Dark";
+});
+
+const GRADE=["Poor","Fair","Good","Excellent"];
+const QDEFS=[["🌐","Browsing"],["🎮","Gaming"],["📺","Streaming"],["📹","Video calls"]];
+function grades(down,up,ping,jit){
+  const p=ping??999,j=jit??999,u=up;
+  let g=(p<=25&&j<=5)?3:(p<=60&&j<=15)?2:(p<=100&&j<=30)?1:0; if(down<3)g=Math.min(g,1);
+  let c=u==null?((down>=10&&p<=60&&j<=15)?2:(down>=5&&p<=120)?1:0)
+    :((u>=10&&down>=10&&p<=50&&j<=10)?3:(u>=3&&down>=5&&p<=100&&j<=20)?2:(u>=1.5&&down>=3)?1:0);
+  return [
+    (p<=50&&down>=25)?3:(p<=100&&down>=10)?2:(down>=5)?1:0,
+    g, down>=50?3:down>=25?2:down>=10?1:0, c
+  ];
+}
+
+function decode(s){
+  s=s.replace(/-/g,"+").replace(/_/g,"/");
+  return JSON.parse(decodeURIComponent(atob(s)));
+}
+
+function render(r){
+  $("rDown").childNodes[0].nodeValue=fmt(r.down);
+  $("rUp").childNodes[0].nodeValue=fmt(r.up);
+  $("rPing").childNodes[0].nodeValue=fmt(r.ping,0);
+  $("rJit").childNodes[0].nodeValue=fmt(r.jit,0);
+  const when=r.ts?new Date(r.ts).toLocaleString():"";
+  $("meta").textContent=[r.isp&&r.isp!=="—"?"ISP: "+r.isp:null,
+    r.loc&&r.loc!=="—"?"Location: "+r.loc:null, when?"Tested: "+when:null]
+    .filter(Boolean).join("  ·  ")||"Shared speed test result";
+  if(r.down!=null){
+    const gs=grades(r.down,r.up,r.ping,r.jit);
+    QDEFS.forEach(([gl,n],i)=>{
+      const d=document.createElement("div"); d.className="q";
+      d.innerHTML=`<div class="n">${gl} ${n}</div><div class="g g${gs[i]}">${GRADE[gs[i]]}</div>`;
+      $("quality").appendChild(d);
+    });
+  }
+  const tb=$("tbl").querySelector("tbody");
+  (r.sources||[]).forEach(s=>{
+    const tr=document.createElement("tr");
+    const cell=v=>v==null?'<td class="na">—</td>':`<td>${v}</td>`;
+    tr.innerHTML=`<td>${String(s.n).slice(0,30)}</td>${cell(s.ping)}${cell(s.jit)}${cell(s.down)}${cell(s.up)}`;
+    tb.appendChild(tr);
+  });
+  document.title=`${fmt(r.down)} Mbps down / ${fmt(r.up)} Mbps up — Speed Test Result`;
+  $("content").style.display="block";
+}
+
+async function load(){
+  const id=new URLSearchParams(location.search).get("id");
+  const h=new URLSearchParams(location.hash.slice(1)).get("d");
+  try{
+    if(h){ render(decode(h)); return; }
+    if(id){
+      const r=await fetch(`${API_BASE}/api/results/${encodeURIComponent(id)}`,{signal:AbortSignal.timeout(8000)});
+      if(!r.ok)throw 0;
+      render(await r.json()); return;
+    }
+    throw 0;
+  }catch{
+    $("meta").textContent="";
+    $("err").style.display="block";
+  }
+}
+load();
+})();
+</script>
+</body>
+</html>
