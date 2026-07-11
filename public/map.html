@@ -40,8 +40,18 @@
   /* ═══ all floating windows live in this LEFT rail ═══ */
   #rail{position:fixed;z-index:70;left:18px;top:70px;bottom:18px;width:284px;
     max-width:calc(100vw - 36px);display:flex;flex-direction:column;gap:12px;
-    overflow-y:auto;pointer-events:none;scrollbar-width:thin;}
+    overflow-y:auto;pointer-events:none;scrollbar-width:thin;
+    transition:transform .28s ease,opacity .28s ease;}
   #rail>*{pointer-events:auto;flex:none;}
+  #rail.hidden{transform:translateX(-115%);opacity:0;}
+  #rail.hidden>*{pointer-events:none;}
+  #railToggle{position:fixed;z-index:75;left:0;top:50%;transform:translateY(-50%);
+    font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.06em;
+    color:var(--cyan);background:var(--panel);border:1px solid var(--line);border-left:none;
+    border-radius:0 10px 10px 0;padding:14px 9px;cursor:pointer;backdrop-filter:blur(6px);
+    box-shadow:0 0 16px rgba(56,224,199,.18);display:none;transition:left .28s ease;}
+  #railToggle.open{left:min(302px,calc(100vw - 36px + 18px));}
+  #railToggle:focus-visible{outline:2px solid var(--cyan);}
   .win{background:var(--panel);border:1px solid var(--line);border-radius:10px;
     padding:12px 15px;backdrop-filter:blur(6px);}
   .ttl{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
@@ -67,7 +77,7 @@
 
   #loadmsg{position:fixed;z-index:55;inset:0;display:flex;align-items:center;justify-content:center;
     font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:.2em;text-transform:uppercase;}
-  @media(max-width:680px){ .sub{display:none;} #rail{width:240px;} #stats{display:none;} }
+  @media(max-width:680px){ .sub{display:none;} #rail{width:250px;} #railToggle{display:block;} }
   @media (prefers-reduced-motion:reduce){ body::after{display:none;} }
 </style>
 </head>
@@ -89,6 +99,7 @@
   <a class="back" href="./">← RUN A SPEED TEST</a>
 </div>
 
+<button id="railToggle" aria-label="Show info panels" aria-expanded="true">&gt;&gt;&gt;</button>
 <!-- every floating window sits in this left rail -->
 <div id="rail">
 
@@ -202,6 +213,7 @@ function showPanel(item,isServer){
     $("pNote").textContent="◈ Area aggregate of anonymous tests. Individual results and tester IP addresses are never collected or shown.";
   }
   panel.style.display="block";
+  if(!railOpen)setRail(true); // detail panels live in the rail — reveal it
 }
 
 /* ============ chart (amCharts 5 — animated lines, like the amcharts demo) ============ */
@@ -387,11 +399,14 @@ function setLinksVisible(on){
 /* ============ controls ============ */
 let mode="3d",range="24h";
 function fillZoom2D(){
-  // zoom so the 2:1 world fills the whole viewport (no letterbox);
-  // panX stays "rotateX", so left-right dragging wraps forever at any zoom
-  const z=Math.max(1.02,(innerWidth/Math.max(innerHeight,1))/2*1.04);
-  const c=userLoc||{lat:12,lon:120};
-  chart.zoomToGeoPoint({latitude:Math.max(-45,Math.min(45,c.lat)),longitude:c.lon},z,true,700);
+  // cover BOTH axes: fill width on wide screens, fill height on tall ones
+  const w=innerWidth,h=Math.max(innerHeight,1);
+  const z=Math.max(w/(2*h),(2*h)/w)*1.03;
+  chart.animate({key:"zoomLevel",to:z,duration:600});
+  // center by ROTATION, never translation — rotation wraps the world
+  // seamlessly, translation slides it off-frame (the "cut map" bug)
+  chart.animate({key:"rotationX",to:userLoc?-userLoc.lon:-120,duration:600});
+  chart.animate({key:"rotationY",to:0,duration:600});
 }
 function setMode(m){
   mode=m;panel.style.display="none";
@@ -408,7 +423,6 @@ function setMode(m){
     chart.set("projection",am5map.geoEquirectangular()); // panX stays rotateX → infinite left-right scroll
     chart.set("panY","translateY");
     bgSeries.mapPolygons.template.set("strokeOpacity",0);  // no cut-out border lines
-    chart.animate({key:"rotationY",to:0,duration:500});
     setTimeout(fillZoom2D,60);
   }
 }
@@ -427,6 +441,20 @@ $("lnkBtn").addEventListener("click",()=>{
   $("lnkBtn").textContent=linksOn?"◆ MY LINKS: ON":"◆ MY LINKS: OFF";
   setLinksVisible(linksOn);
 });
+
+/* rail toggle — floating windows slide away on mobile */
+const rail=$("rail"),railToggle=$("railToggle");
+let railOpen=innerWidth>680; // phones start with a clean full map
+function setRail(open){
+  railOpen=open;
+  rail.classList.toggle("hidden",!open);
+  railToggle.classList.toggle("open",open);
+  railToggle.innerHTML=open?"&lt;&lt;&lt;":"&gt;&gt;&gt;";
+  railToggle.setAttribute("aria-expanded",open);
+  railToggle.setAttribute("aria-label",open?"Hide info panels":"Show info panels");
+}
+railToggle.addEventListener("click",()=>setRail(!railOpen));
+setRail(railOpen);
 
 /* ============ boot ============ */
 (async()=>{
