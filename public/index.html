@@ -353,8 +353,8 @@ Also create /ads.txt in the repo root: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT,
     </div>
     <div class="card notes">
       <h2>How it measures</h2>
-      <p>Sources run one at a time so they never fight for bandwidth: 5 pings (jitter comes from their variation), then 6 s of parallel streamed downloads. Upload runs against Cloudflare and Netflix — most public CDNs are download-only, so those show <code>—</code>.</p>
-      <p>Server IPs are resolved live over DNS-over-HTTPS so you can see exactly which edge you reached. Fast.com is measured through Netflix's public API, the same one their site uses. Ookla, TestMy, SpeedOf.Me, nPerf, Speedcheck and BandwidthPlace can't be measured from another page — their servers reject cross-site requests (CORS), so they live in the hub below instead.</p>
+      <p>Sources run one at a time so they never fight for bandwidth: 5 pings (jitter comes from their variation), then 6 s of parallel streamed downloads. Upload runs against Cloudflare — public CDNs are download-only, so those show <code>—</code>.</p>
+      <p>Server IPs are resolved live over DNS-over-HTTPS so you can see exactly which edge you reached. Fast.com, Ookla, TestMy, SpeedOf.Me, nPerf, Speedcheck and BandwidthPlace can't be measured from another page — their servers reject cross-site requests (CORS), so they live in the hub below instead.</p>
       <p>Quality grades use Ookla-style thresholds on your latency, jitter, download and upload.</p>
     </div>
   </div>
@@ -404,26 +404,6 @@ const SOURCES = [
     ping:()=>"https://speed.cloudflare.com/__down?bytes=0&cb="+Math.random(),
     down:()=>"https://speed.cloudflare.com/__down?bytes=50000000&cb="+Math.random(),
     up:"https://speed.cloudflare.com/__up?cb=", canUp:true },
-  { id:"fastcom", name:"Fast.com (Netflix)", varc:"--red", host:"api.fast.com", streams:3, dynamic:true, canUp:true,
-    init: async function(){
-      const r=await fetch("https://api.fast.com/netflix/speedtest/v2?https=true&token=YXNkZmFzZGxmbnNkYWZoYXNkZmhrYWxm&urlCount=4",
-        {cache:"no-store",signal:AbortSignal.timeout(8000)});
-      if(!r.ok) throw 0;
-      const j=await r.json();
-      this.targets=(j.targets||[]).map(t=>t.url).filter(Boolean);
-      if(!this.targets.length) throw 0;
-      try{ this.host=new URL(this.targets[0]).host; }catch{}
-      this.up=this.targets[0]+(this.targets[0].includes("?")?"&":"?")+"cb=";
-    },
-    ping: function(){
-      const u=this.targets[0];
-      const small=u.replace("/speedtest?","/speedtest/range/0-2048?");
-      return (small!==u?small:u)+"&cb="+Math.random();
-    },
-    down: function(){
-      const u=this.targets[Math.floor(Math.random()*this.targets.length)];
-      return u+"&cb="+Math.random();
-    } },
   { id:"jsdelivr", name:"jsDelivr", varc:"--blue", host:"cdn.jsdelivr.net", streams:3,
     ping:()=>"https://cdn.jsdelivr.net/npm/typescript@5.4.5/package.json?cb="+Math.random(),
     down:()=>"https://cdn.jsdelivr.net/npm/typescript@5.4.5/lib/typescript.js?cb="+Math.random() },
@@ -443,8 +423,8 @@ const SOURCES = [
     ping:()=>"https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Pizigani_1367_Chart_10MB.jpg/120px-Pizigani_1367_Chart_10MB.jpg?cb="+Math.random(),
     down:()=>"https://upload.wikimedia.org/wikipedia/commons/f/ff/Pizigani_1367_Chart_10MB.jpg?cb="+Math.random() },
   { id:"statically", name:"Statically", varc:"--lime", host:"cdn.statically.io", streams:3,
-    ping:()=>"https://cdn.statically.io/gh/dwyl/english-words/master/README.md?cb="+Math.random(),
-    down:()=>"https://cdn.statically.io/gh/dwyl/english-words/master/words.txt?cb="+Math.random() }
+    ping:()=>"https://cdn.statically.io/gh/dwyl/english-words@master/README.md?cb="+Math.random(),
+    down:()=>"https://cdn.statically.io/gh/dwyl/english-words@master/words.txt?cb="+Math.random() }
 ];
 
 /* ================= external test hub ================= */
@@ -452,7 +432,7 @@ const SITES = [
   { n:"Speedtest by Ookla", u:"https://www.speedtest.net/", c:"#6C4BD3",
     d:"The industry reference — thousands of test servers, picks the nearest automatically." },
   { n:"Fast.com", u:"https://fast.com/", c:"#E50914",
-    d:"Netflix's tester — also measured natively above via the same API. Open to compare." },
+    d:"Netflix's tester. Measures against their CDN — the truest read for streaming." },
   { n:"Cloudflare Speed", u:"https://speed.cloudflare.com/", c:"#F6821F",
     d:"Rich stats: latency under load, packet loss, and a network quality score." },
   { n:"SpeedOf.Me", u:"https://speedof.me/", c:"#2E9AD0",

@@ -53,8 +53,6 @@
   .dia{width:9px;height:9px;transform:rotate(45deg);box-shadow:0 0 8px currentColor;flex:none;}
   .lrow{display:flex;align-items:center;gap:8px;justify-content:flex-start;}
 
-  #banner{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--muted);
-    text-align:center;display:none;}
 
   #panel{display:none;border-color:var(--cyan);box-shadow:0 0 28px rgba(56,224,199,.2);}
   #panel.srv{border-color:var(--magenta);box-shadow:0 0 28px rgba(255,63,164,.2);}
@@ -93,7 +91,6 @@
 
 <!-- every floating window sits in this left rail -->
 <div id="rail">
-  <div class="win" id="banner">DEMO DATA — deploy the worker to go live</div>
 
   <div class="win" id="panel" role="dialog" aria-label="Details">
     <h3><span id="pGlyph">◈</span><span id="pTitle"></span><button class="close" id="pClose" aria-label="Close">✕</button></h3>
@@ -116,6 +113,7 @@
     <div class="row"><span>Median download</span><b id="stDown">—</b></div>
     <div class="row"><span>Median ping</span><b id="stPing">—</b></div>
     <div class="row"><span>Window</span><b id="stRange">24 h</b></div>
+    <div class="row" id="stEmpty" style="display:none;"><span>no reports in this window yet — run a test to light up your city</span></div>
   </div>
 
   <div class="win">
@@ -147,47 +145,28 @@ const median=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?s[s.length>>1]:
 /* ============ measured servers (same set as index.html) ============ */
 const HOSTS=[
  ["Cloudflare","speed.cloudflare.com",()=> "https://speed.cloudflare.com/__down?bytes=0&cb="+Math.random()],
- ["Fast.com (Netflix)","api.fast.com",()=> "https://api.fast.com/netflix/speedtest/v2?https=true&token=YXNkZmFzZGxmbnNkYWZoYXNkZmhrYWxm&urlCount=1&cb="+Math.random()],
+ ["Fast.com (Netflix)","api.fast.com",null], // Netflix blocks cross-origin pings — plotted, not pinged
  ["jsDelivr","cdn.jsdelivr.net",()=> "https://cdn.jsdelivr.net/npm/typescript@5.4.5/package.json?cb="+Math.random()],
  ["jsDelivr · Fastly","fastly.jsdelivr.net",()=> "https://fastly.jsdelivr.net/npm/typescript@5.4.5/package.json?cb="+Math.random()],
  ["unpkg","unpkg.com",()=> "https://unpkg.com/typescript@5.4.5/package.json?cb="+Math.random()],
  ["cdnjs","cdnjs.cloudflare.com",()=> "https://cdnjs.cloudflare.com/ajax/libs/js-cookie/3.0.5/js.cookie.min.js?cb="+Math.random()],
  ["GitHub raw","raw.githubusercontent.com",()=> "https://raw.githubusercontent.com/dwyl/english-words/master/README.md?cb="+Math.random()],
  ["Wikimedia","upload.wikimedia.org",()=> "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Pizigani_1367_Chart_10MB.jpg/120px-Pizigani_1367_Chart_10MB.jpg?cb="+Math.random()],
- ["Statically","cdn.statically.io",()=> "https://cdn.statically.io/gh/dwyl/english-words/master/README.md?cb="+Math.random()]
+ ["Statically","cdn.statically.io",()=> "https://cdn.statically.io/gh/dwyl/english-words@master/README.md?cb="+Math.random()]
 ];
 
 /* ============ tester data ============ */
 let points=[];
-const DEMO=[["Manila","PH",14.6,121.0],["Cebu","PH",10.3,123.9],["Cagayan de Oro","PH",8.48,124.65],
-["Tokyo","JP",35.7,139.7],["Seoul","KR",37.6,127.0],["Singapore","SG",1.35,103.8],["Jakarta","ID",-6.2,106.8],
-["Bangkok","TH",13.8,100.5],["Mumbai","IN",19.1,72.9],["Dubai","AE",25.2,55.3],["Sydney","AU",-33.9,151.2],
-["London","GB",51.5,-0.13],["Paris","FR",48.9,2.35],["Berlin","DE",52.5,13.4],["Madrid","ES",40.4,-3.7],
-["Amsterdam","NL",52.4,4.9],["Stockholm","SE",59.3,18.1],["Istanbul","TR",41.0,28.98],["Cairo","EG",30.0,31.2],
-["Lagos","NG",6.5,3.4],["Johannesburg","ZA",-26.2,28.0],["New York","US",40.7,-74.0],["Los Angeles","US",34.05,-118.2],
-["Chicago","US",41.9,-87.6],["Seattle","US",47.6,-122.3],["Toronto","CA",43.7,-79.4],["Mexico City","MX",19.4,-99.1],
-["São Paulo","BR",-23.55,-46.6],["Buenos Aires","AR",-34.6,-58.4],["Santiago","CL",-33.4,-70.7],["Honolulu","US",21.3,-157.9]];
-function demoData(range){
-  const mult={"24h":1,"7d":4,"30d":11}[range]||1;
-  let seed=range.length*97;
-  const rnd=()=>{seed=(seed*9301+49297)%233280;return seed/233280;};
-  return DEMO.map(([city,country,lat,lon])=>{
-    const base=8+rnd()*220;
-    return {city,country,lat,lon,down:+base.toFixed(1),up:+(base*(.15+rnd()*.5)).toFixed(1),
-      ping:Math.round(5+rnd()*120),n:Math.max(1,Math.round(rnd()*40*mult))};
-  });
-}
 async function fetchData(range){
   try{
     const r=await fetch(`/api/stats?range=${range}`,{signal:AbortSignal.timeout(8000)});
-    if(r.ok){const j=await r.json();
-      if(Array.isArray(j)&&j.length){$("banner").style.display="none";return j;}}
+    if(r.ok){const j=await r.json();if(Array.isArray(j))return j;}
   }catch{}
-  $("banner").style.display="block";
-  return demoData(range);
+  return []; // real data only — an empty window shows an empty world
 }
 function updateStats(range){
   const tests=points.reduce((a,p)=>a+(p.n||1),0);
+  $("stEmpty").style.display=points.length?"none":"block";
   $("stTests").textContent=tests.toLocaleString();
   $("stLocs").textContent=points.length;
   $("stDown").textContent=fmt(median(points.map(p=>p.down)))+" Mbps";
@@ -226,7 +205,7 @@ function showPanel(item,isServer){
 }
 
 /* ============ chart (amCharts 5 — animated lines, like the amcharts demo) ============ */
-let root,chart,pointSeries,serverSeries,userSeries,rotateAnim,resumeTimer;
+let root,chart,bgSeries,pointSeries,serverSeries,userSeries,rotateAnim,resumeTimer;
 const lineSeriesByColor={},packetAnims=[];
 function makeTooltip(hex){
   const t=am5.Tooltip.new(root,{getFillFromSprite:false,autoTextColor:false});
@@ -250,13 +229,23 @@ function pauseSpin(){
 function buildChart(){
   root=am5.Root.new("globediv");
   chart=root.container.children.push(am5map.MapChart.new(root,{
-    panX:"rotateX",panY:"rotateY",wheelY:"zoom",
-    projection:am5map.geoOrthographic(),paddingTop:56,paddingBottom:26
+    panX:"rotateX",panY:"rotateY",wheelY:"zoom",pinchZoom:true,
+    maxZoomLevel:64,maxPanOut:0,
+    projection:am5map.geoOrthographic(),paddingTop:0,paddingBottom:0
   }));
-  const bg=chart.series.push(am5map.MapPolygonSeries.new(root,{}));
-  bg.mapPolygons.template.setAll({fill:am5.color(0x04101E),fillOpacity:1,
+  // whole canvas = ocean color, so the map never looks letterboxed
+  chart.chartContainer.set("background",am5.Rectangle.new(root,{
+    fill:am5.color(0x04070F),fillOpacity:1}));
+  // +/- zoom buttons (bottom-right; the rail owns the left side)
+  const zc=chart.set("zoomControl",am5map.ZoomControl.new(root,{}));
+  [zc.plusButton,zc.minusButton].forEach(b=>{
+    b.get("background").setAll({fill:am5.color(0x0A1220),stroke:am5.color(0x38E0C7),strokeOpacity:.5});
+    b.set("fill",am5.color(0x38E0C7));
+  });
+  bgSeries=chart.series.push(am5map.MapPolygonSeries.new(root,{}));
+  bgSeries.mapPolygons.template.setAll({fill:am5.color(0x04101E),fillOpacity:1,
     stroke:am5.color(0x38E0C7),strokeOpacity:.28,strokeWidth:1.2});
-  bg.data.push({geometry:am5map.getGeoRectangle(90,180,-90,-180)});
+  bgSeries.data.push({geometry:am5map.getGeoRectangle(90,180,-90,-180)});
   const poly=chart.series.push(am5map.MapPolygonSeries.new(root,{
     geoJSON:am5geodata_worldLow,exclude:["AQ"]}));
   poly.mapPolygons.template.setAll({fill:am5.color(0x0B2A3A),
@@ -341,6 +330,7 @@ async function detectUser(){
   return null;
 }
 async function pingHost(urlFn){
+  if(!urlFn)return null;
   const t=[];
   for(let i=0;i<2;i++){
     const t0=performance.now();
@@ -396,6 +386,13 @@ function setLinksVisible(on){
 
 /* ============ controls ============ */
 let mode="3d",range="24h";
+function fillZoom2D(){
+  // zoom so the 2:1 world fills the whole viewport (no letterbox);
+  // panX stays "rotateX", so left-right dragging wraps forever at any zoom
+  const z=Math.max(1.02,(innerWidth/Math.max(innerHeight,1))/2*1.04);
+  const c=userLoc||{lat:12,lon:120};
+  chart.zoomToGeoPoint({latitude:Math.max(-45,Math.min(45,c.lat)),longitude:c.lon},z,true,700);
+}
 function setMode(m){
   mode=m;panel.style.display="none";
   $("v3d").classList.toggle("on",m==="3d");
@@ -403,14 +400,19 @@ function setMode(m){
   if(m==="3d"){
     chart.set("projection",am5map.geoOrthographic());
     chart.set("panY","rotateY");
+    bgSeries.mapPolygons.template.set("strokeOpacity",.28); // globe rim
+    chart.animate({key:"zoomLevel",to:1,duration:500});
     startSpin();
   }else{
     stopSpin();clearTimeout(resumeTimer);
     chart.set("projection",am5map.geoEquirectangular()); // panX stays rotateX → infinite left-right scroll
     chart.set("panY","translateY");
-    chart.animate({key:"rotationY",to:0,duration:600});
+    bgSeries.mapPolygons.template.set("strokeOpacity",0);  // no cut-out border lines
+    chart.animate({key:"rotationY",to:0,duration:500});
+    setTimeout(fillZoom2D,60);
   }
 }
+addEventListener("resize",()=>{ if(mode==="2d")fillZoom2D(); });
 $("v3d").addEventListener("click",()=>setMode("3d"));
 $("v2d").addEventListener("click",()=>setMode("2d"));
 document.querySelectorAll("[data-r]").forEach(b=>b.addEventListener("click",async()=>{
