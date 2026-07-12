@@ -15,11 +15,11 @@
     --c-fast:#38E0C7; --c-good:#5BD97A; --c-mid:#F0C04B; --c-slow:#F08A4B; --c-poor:#E85D5D;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%;}
+  html,body{height:100%;overscroll-behavior:none;}
   body{background:var(--bg);color:var(--ink);font-family:var(--disp);overflow:hidden;}
   body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:90;opacity:.45;
     background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.13) 3px 4px);}
-  #globediv{position:fixed;inset:0;}
+  #globediv{position:fixed;inset:0;touch-action:none;-webkit-tap-highlight-color:transparent;}
 
   .hud.top{position:fixed;z-index:60;top:0;left:0;right:0;display:flex;align-items:center;gap:12px;
     flex-wrap:wrap;padding:14px 18px;background:linear-gradient(180deg,rgba(4,7,15,.92),transparent);}
@@ -75,6 +75,20 @@
     border-radius:999px;border:1px solid currentColor;}
   #panel .note{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px;line-height:1.6;}
 
+  #locBtn{position:fixed;z-index:75;right:18px;bottom:122px;width:40px;height:40px;
+    border-radius:50%;background:var(--panel);border:1px solid var(--line);color:var(--cyan);
+    font-size:18px;cursor:pointer;backdrop-filter:blur(6px);
+    box-shadow:0 0 14px rgba(56,224,199,.2);}
+  #locBtn:disabled{opacity:.35;cursor:default;}
+  #locBtn:focus-visible{outline:2px solid var(--cyan);}
+  .dd{position:relative;}
+  .ddlist{position:absolute;top:calc(100% + 8px);left:0;min-width:240px;z-index:85;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+    backdrop-filter:blur(8px);max-height:62vh;overflow-y:auto;box-shadow:0 0 24px rgba(56,224,199,.14);}
+  .ddlist label{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11.5px;
+    color:var(--ink);padding:5px 2px;cursor:pointer;}
+  .ddlist input{accent-color:var(--cyan);width:13px;height:13px;flex:none;cursor:pointer;}
+  .ddlist .host{color:var(--muted);font-size:10px;margin-left:auto;}
   #loadmsg{position:fixed;z-index:55;inset:0;display:flex;align-items:center;justify-content:center;
     font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:.2em;text-transform:uppercase;}
   @media(max-width:680px){ .sub{display:none;} #rail{width:250px;} #railToggle{display:block;} }
@@ -95,10 +109,15 @@
     <button data-r="24h" class="on">24 H</button><button data-r="7d">7 D</button><button data-r="30d">30 D</button>
   </div>
   <div class="seg"><button id="lnkBtn" class="srv on">◆ MY LINKS: ON</button></div>
+  <div class="dd">
+    <div class="seg"><button id="srvDD">◇ SERVERS ▾</button></div>
+    <div class="ddlist" id="srvList" hidden></div>
+  </div>
   <div class="spacer"></div>
   <a class="back" href="./">← RUN A SPEED TEST</a>
 </div>
 
+<button id="locBtn" title="Focus my location" aria-label="Focus my location" disabled>◎</button>
 <button id="railToggle" aria-label="Show info panels" aria-expanded="true">&gt;&gt;&gt;</button>
 <!-- every floating window sits in this left rail -->
 <div id="rail">
@@ -134,7 +153,7 @@
     <div class="row lrow"><span class="dot" style="background:var(--c-mid);color:var(--c-mid)"></span>25–50 Mbps</div>
     <div class="row lrow"><span class="dot" style="background:var(--c-slow);color:var(--c-slow)"></span>10–25 Mbps</div>
     <div class="row lrow"><span class="dot" style="background:var(--c-poor);color:var(--c-poor)"></span>&lt;10 Mbps</div>
-    <div class="row lrow"><span class="dia" style="background:var(--magenta);color:var(--magenta)"></span>test server (edge)</div>
+    <div class="row lrow"><span class="dia" style="background:var(--magenta);color:var(--magenta)"></span>test servers — colors in ◇ SERVERS</div>
     <div class="row lrow"><span style="width:14px;height:2px;background:var(--cyan);box-shadow:0 0 6px var(--cyan);flex:none;"></span>your live ping link</div>
   </div>
 </div>
@@ -153,18 +172,23 @@ const speedLabel=d=> d>=100?"BLAZING": d>=50?"FAST": d>=25?"DECENT": d>=10?"SLOW
 const pingHex=p=> p<30?0x38E0C7: p<60?0x5BD97A: p<100?0xF0C04B:0xE85D5D;
 const median=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?s[s.length>>1]:null;};
 
-/* ============ measured servers (same set as index.html) ============ */
-const HOSTS=[
- ["Cloudflare","speed.cloudflare.com",()=> "https://speed.cloudflare.com/__down?bytes=0&cb="+Math.random()],
- ["Fast.com (Netflix)","api.fast.com",null], // Netflix blocks cross-origin pings — plotted, not pinged
- ["jsDelivr","cdn.jsdelivr.net",()=> "https://cdn.jsdelivr.net/npm/typescript@5.4.5/package.json?cb="+Math.random()],
- ["jsDelivr · Fastly","fastly.jsdelivr.net",()=> "https://fastly.jsdelivr.net/npm/typescript@5.4.5/package.json?cb="+Math.random()],
- ["unpkg","unpkg.com",()=> "https://unpkg.com/typescript@5.4.5/package.json?cb="+Math.random()],
- ["cdnjs","cdnjs.cloudflare.com",()=> "https://cdnjs.cloudflare.com/ajax/libs/js-cookie/3.0.5/js.cookie.min.js?cb="+Math.random()],
- ["GitHub raw","raw.githubusercontent.com",()=> "https://raw.githubusercontent.com/dwyl/english-words/master/README.md?cb="+Math.random()],
- ["Wikimedia","upload.wikimedia.org",()=> "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Pizigani_1367_Chart_10MB.jpg/120px-Pizigani_1367_Chart_10MB.jpg?cb="+Math.random()],
- ["Statically","cdn.statically.io",()=> "https://cdn.statically.io/gh/dwyl/english-words@master/README.md?cb="+Math.random()]
+/* ============ measured services — color-coded; extend this list to add more ============ */
+const SERVICES=[
+ {key:"cf",   name:"Cloudflare",         host:"speed.cloudflare.com",      hex:0xF0A04B, ping:()=> "https://speed.cloudflare.com/__down?bytes=0&cb="+Math.random()},
+ {key:"nflx", name:"Fast.com (Netflix)", host:"api.fast.com",              hex:0xE85D5D, ping:null},
+ {key:"jsd",  name:"jsDelivr",           host:"cdn.jsdelivr.net",          hex:0x5B8DEF, ping:()=> "https://cdn.jsdelivr.net/npm/typescript@5.4.5/package.json?cb="+Math.random()},
+ {key:"fsly", name:"jsDelivr · Fastly",  host:"fastly.jsdelivr.net",       hex:0xEF7BA8, ping:()=> "https://fastly.jsdelivr.net/npm/typescript@5.4.5/package.json?cb="+Math.random()},
+ {key:"unpkg",name:"unpkg",              host:"unpkg.com",                 hex:0x2FC1C1, ping:()=> "https://unpkg.com/typescript@5.4.5/package.json?cb="+Math.random()},
+ {key:"cdnjs",name:"cdnjs",              host:"cdnjs.cloudflare.com",      hex:0xA78BFA, ping:()=> "https://cdnjs.cloudflare.com/ajax/libs/js-cookie/3.0.5/js.cookie.min.js?cb="+Math.random()},
+ {key:"gh",   name:"GitHub raw",         host:"raw.githubusercontent.com", hex:0x4FBF7A, ping:()=> "https://raw.githubusercontent.com/dwyl/english-words/master/README.md?cb="+Math.random()},
+ {key:"wiki", name:"Wikimedia",          host:"upload.wikimedia.org",      hex:0x58B7E8, ping:()=> "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Pizigani_1367_Chart_10MB.jpg/120px-Pizigani_1367_Chart_10MB.jpg?cb="+Math.random()},
+ {key:"stat", name:"Statically",         host:"cdn.statically.io",         hex:0xB4C94A, ping:()=> "https://cdn.statically.io/gh/dwyl/english-words@master/README.md?cb="+Math.random()}
 ];
+const OTHER={key:"other",name:"Other edges",hex:0xFF3FA4};
+const hexCss=x=>"#"+x.toString(16).padStart(6,"0");
+const svcByHost=Object.fromEntries(SERVICES.map(s=>[s.host,s]));
+
+/* service colors — every server of a service shares its hue */
 
 /* ============ tester data ============ */
 let points=[];
@@ -191,7 +215,7 @@ $("pClose").addEventListener("click",()=>panel.style.display="none");
 function showPanel(item,isServer){
   panel.classList.toggle("srv",!!isServer);
   $("pGlyph").textContent=isServer?"◆":"◈";
-  $("pGlyph").style.color=isServer?"var(--magenta)":speedColor(item.down||0);
+  $("pGlyph").style.color=isServer?hexCss(item.hex||0xFF3FA4):speedColor(item.down||0);
   const rows=$("pRows");rows.innerHTML="";
   const add=(k,v)=>{if(v==null||v==="")return;
     const d=document.createElement("div");d.className="row";
@@ -202,15 +226,25 @@ function showPanel(item,isServer){
     add("Your ping",item.ping!=null?fmt(item.ping,0)+" ms":"—");
     add("Edge location",[item.city,item.country].filter(Boolean).join(", "));
     add("Network",String(item.org||"").slice(0,30));
+    add("Reported by",item.mine?"you (live ping)":"testers in another region");
     $("pNote").textContent="◆ Anycast CDN: this is the edge nearest to YOU right now — testers elsewhere reach a different edge of the same network.";
   }else{
     $("pTitle").textContent=`${item.city||"Unknown"}, ${item.country||""}`;
-    add("Status",`<span class="badge" style="color:${speedColor(item.down)}">${speedLabel(item.down)}</span>`);
-    add("Avg download",fmt(item.down)+" Mbps");
-    add("Avg upload",fmt(item.up)+" Mbps");
-    add("Avg ping",fmt(item.ping,0)+" ms");
-    add("Tests in window",(item.n||1).toLocaleString());
-    $("pNote").textContent="◈ Area aggregate of anonymous tests. Individual results and tester IP addresses are never collected or shown.";
+    if(item.down==null){
+      add("Status",`<span class="badge" style="color:var(--muted)">NO REPORTS YET</span>`);
+      $("pNote").textContent="◈ No speed tests recorded here in this window — run one to put this area on the map.";
+    }else{
+      add("Status",`<span class="badge" style="color:${speedColor(item.down)}">${speedLabel(item.down)}</span>`);
+      add("Avg download",fmt(item.down)+" Mbps");
+      add("Avg upload",fmt(item.up)+" Mbps");
+      add("Avg ping",fmt(item.ping,0)+" ms");
+      add("Tests in window",(item.n||0).toLocaleString());
+      if(item.isps&&item.isps.length){
+        add("ISPs seen here","");
+        item.isps.forEach(i=>add("· "+String(i.name).slice(0,26),i.n+"×"));
+      }
+      $("pNote").textContent="◈ Area aggregate of anonymous tests. ISP names are shown; individual results and tester IP addresses are never collected or shown.";
+    }
   }
   panel.style.display="block";
   if(!railOpen)setRail(true); // detail panels live in the rail — reveal it
@@ -228,7 +262,9 @@ function makeTooltip(hex){
   return t;
 }
 function startSpin(){
+  if(mode!=="3d")return;
   stopSpin();
+  chart.animate({key:"zoomLevel",to:1,duration:900}); // zoom back out for the cinematic spin
   const from=chart.get("rotationX");
   rotateAnim=chart.animate({key:"rotationX",from,to:from+360,duration:80000,loops:Infinity});
 }
@@ -236,7 +272,7 @@ function stopSpin(){ if(rotateAnim){rotateAnim.stop();rotateAnim=null;} }
 function pauseSpin(){
   if(mode!=="3d")return;
   stopSpin();clearTimeout(resumeTimer);
-  resumeTimer=setTimeout(startSpin,4000);
+  resumeTimer=setTimeout(startSpin,10000); // 10 s of no drag activity → resume
 }
 function buildChart(){
   root=am5.Root.new("globediv");
@@ -289,17 +325,19 @@ function buildChart(){
     return am5.Bullet.new(r,{sprite:cont});
   });
 
-  // server diamonds
+  // server diamonds — color-coded per service; dimmer = edge seen by other regions
   serverSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
   serverSeries.set("tooltip",makeTooltip(0xFF3FA4));
   serverSeries.bullets.push((r,s,dataItem)=>{
-    const d=dataItem.dataContext;
-    const cont=am5.Container.new(r,{cursorOverStyle:"pointer",
-      tooltipText:`[bold]◆ ${d.name}[/]\n${d.host}\nyour ping: ${d.ping!=null?fmt(d.ping,0)+" ms":"—"} · click for details`});
-    cont.children.push(am5.Rectangle.new(r,{width:16,height:16,centerX:am5.p50,centerY:am5.p50,
-      rotation:45,fill:am5.color(0xFF3FA4),fillOpacity:.2}));
-    cont.children.push(am5.Rectangle.new(r,{width:7,height:7,centerX:am5.p50,centerY:am5.p50,
-      rotation:45,fill:am5.color(0xFF3FA4)}));
+    const d=dataItem.dataContext,c=am5.color(d.hex||0xFF3FA4);
+    const tip=d.mine
+      ?`[bold]◆ ${d.name}[/]\n${d.host}\nyour ping: ${d.ping!=null?fmt(d.ping,0)+" ms":"—"} · click for details`
+      :`[bold]◆ ${d.name}[/]\n${d.host}\nedge reached by testers elsewhere · click for details`;
+    const cont=am5.Container.new(r,{cursorOverStyle:"pointer",tooltipText:tip});
+    cont.children.push(am5.Rectangle.new(r,{width:d.mine?16:12,height:d.mine?16:12,
+      centerX:am5.p50,centerY:am5.p50,rotation:45,fill:c,fillOpacity:d.mine?.22:.14}));
+    cont.children.push(am5.Rectangle.new(r,{width:d.mine?7:5,height:d.mine?7:5,
+      centerX:am5.p50,centerY:am5.p50,rotation:45,fill:c,fillOpacity:d.mine?1:.6}));
     cont.events.on("click",()=>showPanel(d,true));
     return am5.Bullet.new(r,{sprite:cont});
   });
@@ -309,7 +347,9 @@ function buildChart(){
   userSeries.set("tooltip",makeTooltip(0x38E0C7));
   userSeries.bullets.push((r,s,dataItem)=>{
     const d=dataItem.dataContext;
-    const cont=am5.Container.new(r,{tooltipText:`[bold]◎ YOU[/]\n${d.label||""}`});
+    const cont=am5.Container.new(r,{cursorOverStyle:"pointer",
+      tooltipText:`[bold]◎ YOU[/]\n${d.label||""}\nclick for your area's status`});
+    cont.events.on("click",showMyArea);
     const halo=am5.Circle.new(r,{radius:6,fill:am5.color(0x38E0C7),fillOpacity:.35});
     halo.animate({key:"radius",from:6,to:18,duration:1600,loops:Infinity});
     halo.animate({key:"fillOpacity",from:.35,to:0,duration:1600,loops:Infinity});
@@ -320,6 +360,7 @@ function buildChart(){
   });
 
   chart.chartContainer.get("background").events.on("pointerdown",pauseSpin);
+  chart.chartContainer.events.on("pointerdown",pauseSpin); // any drag, anywhere on the map
   poly.mapPolygons.template.events.on("pointerdown",pauseSpin);
   startSpin();
   chart.appear(800,100);
@@ -328,8 +369,10 @@ function setGlobePoints(){
   pointSeries.data.setAll(points.map(p=>({geometry:{type:"Point",coordinates:[p.lon,p.lat]},...p})));
 }
 
-/* ============ your live connections (the animated-lines part) ============ */
-let userLoc=null,servers=[];
+/* ============ your live connections + global edge registry ============ */
+let userLoc=null,myEdges=[],edges=[];
+const conns={},svcItems={},svcChecked={};
+SERVICES.concat([OTHER]).forEach(s=>svcChecked[s.key]=true);
 async function detectUser(){
   try{
     const j=await fetch("https://speed.cloudflare.com/meta",{cache:"no-store",signal:AbortSignal.timeout(7000)}).then(r=>r.json());
@@ -355,46 +398,121 @@ async function pingHost(urlFn){
   }
   return t.length?Math.round(Math.min(...t)):null;
 }
-async function loadServer([name,host,pingUrl]){
+async function loadEdge(svc){
   try{
     const [dns,ping]=await Promise.all([
-      fetch(`https://dns.google/resolve?name=${host}&type=A`,{cache:"no-store"}).then(r=>r.json()),
-      pingHost(pingUrl)
+      fetch(`https://dns.google/resolve?name=${svc.host}&type=A`,{cache:"no-store"}).then(r=>r.json()),
+      pingHost(svc.ping)
     ]);
     const ip=((dns.Answer||[]).find(x=>x.type===1)||{}).data;
     if(!ip)return null;
     const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
     if(!g||g.success===false||g.latitude==null)return null;
-    return{name,host,ip,ping,lat:g.latitude,lon:g.longitude,
-      org:(g.connection&&g.connection.org)||"",city:g.city||"",country:g.country_code||""};
+    return{svc:svc.key,name:svc.name,hex:svc.hex,host:svc.host,ip,ping,mine:true,
+      lat:g.latitude,lon:g.longitude,org:(g.connection&&g.connection.org)||"",
+      city:g.city||"",country:g.country_code||""};
   }catch{return null;}
 }
+async function shareAndFetchEdges(){
+  // log MY edges so testers in other regions see them, then pull everyone's
+  fetch("/api/servers",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({servers:myEdges.map(({name,host,ip,lat,lon,org,city,country})=>
+      ({name,host,ip,lat,lon,org,city,country}))})}).catch(()=>{});
+  let remote=[];
+  try{
+    const r=await fetch("/api/servers",{signal:AbortSignal.timeout(8000)});
+    if(r.ok)remote=await r.json();
+  }catch{}
+  const seen=new Set(myEdges.map(e=>e.host+"|"+e.ip));
+  const extra=(Array.isArray(remote)?remote:[])
+    .filter(e=>e&&e.host&&e.ip&&!seen.has(e.host+"|"+e.ip))
+    .map(e=>{
+      const svc=svcByHost[e.host]||OTHER;
+      return{...e,svc:svc.key,name:svc===OTHER?(e.name||e.host):svc.name,
+        hex:svc.hex,mine:false,ping:null};
+    });
+  edges=[...myEdges,...extra];
+}
+function setGlobeServers(){
+  serverSeries.data.setAll(edges.map(e=>({geometry:{type:"Point",coordinates:[e.lon,e.lat]},...e})));
+  Object.keys(svcItems).forEach(k=>delete svcItems[k]);
+  serverSeries.dataItems.forEach(di=>{
+    const k=(di.dataContext&&di.dataContext.svc)||"other";
+    (svcItems[k]=svcItems[k]||[]).push(di);
+  });
+  Object.entries(svcChecked).forEach(([k,on])=>{ if(!on)applyService(k,false); });
+}
 function drawConnections(){
-  serverSeries.data.setAll(servers.map(s=>({geometry:{type:"Point",coordinates:[s.lon,s.lat]},...s})));
   if(!userLoc)return;
   userSeries.data.setAll([{geometry:{type:"Point",coordinates:[userLoc.lon,userLoc.lat]},label:userLoc.label}]);
-  servers.forEach(s=>{
-    const hex=pingHex(s.ping??999),grp=lineSeriesByColor[hex];
+  myEdges.forEach(e=>{
+    const hex=e.ping!=null?pingHex(e.ping):0x5E7C8C,grp=lineSeriesByColor[hex];
+    if(!grp)return;
     const ldi=grp.lines.pushDataItem({geometry:{type:"LineString",
-      coordinates:[[userLoc.lon,userLoc.lat],[s.lon,s.lat]]}});
-    // traveling packet: speed proportional to your real ping (lower ping = faster pulse)
+      coordinates:[[userLoc.lon,userLoc.lat],[e.lon,e.lat]]}});
     const pdi=grp.packets.pushDataItem({lineDataItem:ldi,positionOnLine:0});
-    const dur=Math.max(1100,Math.min(4200,(s.ping??150)*22));
-    packetAnims.push(pdi.animate({key:"positionOnLine",from:0,to:1,
-      duration:dur,loops:Infinity,easing:am5.ease.inOut(am5.ease.quad)}));
+    const dur=Math.max(1100,Math.min(4200,(e.ping??150)*22));
+    const anim=pdi.animate({key:"positionOnLine",from:0,to:1,
+      duration:dur,loops:Infinity,easing:am5.ease.inOut(am5.ease.quad)});
+    packetAnims.push(anim);
+    conns[e.svc]={ldi,pdi,anim};
+    if(svcChecked[e.svc]===false){ldi.hide();pdi.hide();anim.pause();}
   });
-  // connections summary window
-  const ps=servers.map(s=>s.ping).filter(p=>p!=null);
+  const ps=myEdges.map(e=>e.ping).filter(p=>p!=null);
   $("cLoc").textContent=userLoc.label||"located";
-  $("cSrv").textContent=servers.length+" / "+HOSTS.length;
+  $("cSrv").textContent=myEdges.length+" / "+SERVICES.length;
   $("cBest").textContent=ps.length?Math.min(...ps)+" ms":"—";
   $("cMed").textContent=ps.length?median(ps)+" ms":"—";
+  $("locBtn").disabled=false;
 }
+/* MY LINKS hides ONLY the animated lines — server diamonds stay visible */
 function setLinksVisible(on){
   const m=on?"show":"hide";
-  serverSeries[m]();userSeries[m]();
   Object.values(lineSeriesByColor).forEach(g=>{g.lines[m]();g.packets[m]();});
 }
+/* per-service visibility: diamond(s) + its animated link */
+function applyService(key,on){
+  svcChecked[key]=on;
+  (svcItems[key]||[]).forEach(di=>on?di.show():di.hide());
+  const c=conns[key];
+  if(c){
+    if(on&&linksOn){c.ldi.show();c.pdi.show();c.anim&&c.anim.play();}
+    else{c.ldi.hide();c.pdi.hide();c.anim&&c.anim.pause();}
+  }
+}
+function buildServerDropdown(){
+  const list=$("srvList");list.innerHTML="";
+  const items=SERVICES.concat(svcItems.other?[OTHER]:[]);
+  items.forEach(s=>{
+    const n=(svcItems[s.key]||[]).length;
+    const l=document.createElement("label");
+    l.innerHTML=`<input type="checkbox" ${svcChecked[s.key]?"checked":""} data-k="${s.key}">
+      <span class="dia" style="background:${hexCss(s.hex)};color:${hexCss(s.hex)}"></span>
+      ${s.name}<span class="host">${n} edge${n===1?"":"s"}</span>`;
+    l.querySelector("input").addEventListener("change",e=>applyService(s.key,e.target.checked));
+    list.appendChild(l);
+  });
+}
+$("srvDD").addEventListener("click",e=>{
+  e.stopPropagation();
+  $("srvList").hidden=!$("srvList").hidden;
+});
+document.addEventListener("click",e=>{
+  if(!$("srvList").hidden&&!e.target.closest(".dd"))$("srvList").hidden=true;
+});
+/* locate button: focus the map on the user, both modes */
+$("locBtn").addEventListener("click",()=>{
+  if(!userLoc)return;
+  const ease=am5.ease.inOut(am5.ease.cubic);
+  if(mode==="3d"){
+    stopSpin();clearTimeout(resumeTimer);resumeTimer=setTimeout(startSpin,10000);
+    chart.animate({key:"rotationX",to:-userLoc.lon,duration:900,easing:ease});
+    chart.animate({key:"rotationY",to:-userLoc.lat,duration:900,easing:ease});
+    chart.animate({key:"zoomLevel",to:2.6,duration:900,easing:ease});
+  }else{
+    chart.zoomToGeoPoint({latitude:userLoc.lat,longitude:userLoc.lon},7,true,900);
+  }
+});
 
 /* ============ controls ============ */
 let mode="3d",range="24h";
@@ -434,12 +552,12 @@ document.querySelectorAll("[data-r]").forEach(b=>b.addEventListener("click",asyn
   b.classList.add("on");range=b.dataset.r;
   points=await fetchData(range);setGlobePoints();updateStats(range);
 }));
-let linksOn=true;
+var linksOn=true;
 $("lnkBtn").addEventListener("click",()=>{
   linksOn=!linksOn;
   $("lnkBtn").classList.toggle("on",linksOn);
   $("lnkBtn").textContent=linksOn?"◆ MY LINKS: ON":"◆ MY LINKS: OFF";
-  setLinksVisible(linksOn);
+  applyVisibility();
 });
 
 /* rail toggle — floating windows slide away on mobile */
@@ -456,6 +574,16 @@ function setRail(open){
 railToggle.addEventListener("click",()=>setRail(!railOpen));
 setRail(railOpen);
 
+/* ============ my own dot → my area's status + ISP list ============ */
+function showMyArea(){
+  if(!userLoc)return;
+  const near=points.map(p=>({p,d:Math.hypot(p.lat-userLoc.lat,p.lon-userLoc.lon)}))
+    .sort((a,b)=>a.d-b.d)[0];
+  if(near&&near.d<2){ showPanel(near.p,false); }         // ~200 km — your area's aggregate
+  else showPanel({city:userLoc.label||"Your location",country:"",down:null,
+    up:null,ping:null,n:0,isps:[]},false);               // no reports yet here
+}
+
 /* ============ boot ============ */
 (async()=>{
   buildChart();
@@ -463,9 +591,12 @@ setRail(railOpen);
   setGlobePoints();updateStats(range);
   $("loadmsg").remove();
   // locate user + geolocate servers + measure real pings, then animate the links
-  const [u,...srv]=await Promise.all([detectUser(),...HOSTS.map(loadServer)]);
-  userLoc=u;servers=srv.filter(Boolean);
+  const [u,...mine]=await Promise.all([detectUser(),...SERVICES.map(loadEdge)]);
+  userLoc=u;myEdges=mine.filter(Boolean);
+  await shareAndFetchEdges();   // log my edges globally, pull everyone else's
+  setGlobeServers();
   drawConnections();
+  buildServerDropdown();
   if(!linksOn)setLinksVisible(false);
 })();
 })();
