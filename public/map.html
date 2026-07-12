@@ -356,7 +356,7 @@ function buildChart(){
   pointSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
   pointSeries.set("tooltip",makeTooltip(0x38E0C7));
   pointSeries.bullets.push((r,s,dataItem)=>{
-    const d=dataItem.dataContext,c=am5.color(speedColor(d.down));
+    const d=dataItem.dataContext||{},c=am5.color(speedColor(d.down||0));
     const cont=am5.Container.new(r,{cursorOverStyle:"pointer",
       tooltipText:`[bold]${d.city||"Unknown"}, ${d.country||""}[/]\n↓ ${fmt(d.down)} Mbps · ↑ ${fmt(d.up)} Mbps\nping ${fmt(d.ping,0)} ms · ${d.n||1} tests · click for details`});
     cont.children.push(am5.Circle.new(r,{radius:11,fill:c,fillOpacity:.3}));
@@ -371,7 +371,7 @@ function buildChart(){
   serverSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
   serverSeries.set("tooltip",makeTooltip(0xFF3FA4));
   serverSeries.bullets.push((r,s,dataItem)=>{
-    const d=dataItem.dataContext,c=am5.color(d.hex||0xFF3FA4);
+    const d=dataItem.dataContext||{},c=am5.color(d.hex||0xFF3FA4);
     const tip=d.mine
       ?`[bold]◆ ${d.name}[/]\n${d.host}\nyour ping: ${d.ping!=null?fmt(d.ping,0)+" ms":"—"} · click for details`
       :`[bold]◆ ${d.name}[/]\n${d.host}\nedge reached by testers elsewhere · click for details`;
@@ -388,7 +388,7 @@ function buildChart(){
   userSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
   userSeries.set("tooltip",makeTooltip(0x38E0C7));
   userSeries.bullets.push((r,s,dataItem)=>{
-    const d=dataItem.dataContext;
+    const d=dataItem.dataContext||{};
     const cont=am5.Container.new(r,{cursorOverStyle:"pointer",
       tooltipText:`[bold]◎ YOU${d.vpn?" · VPN detected":""}[/]\n${d.label||""}\nclick for your area's status`});
     cont.events.on("click",showMyArea);
@@ -405,7 +405,7 @@ function buildChart(){
   visitorSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
   visitorSeries.set("tooltip",makeTooltip(0x5E7C8C));
   visitorSeries.bullets.push((r,s,dataItem)=>{
-    const d=dataItem.dataContext;
+    const d=dataItem.dataContext||{};
     const cont=am5.Container.new(r,{tooltipText:`[bold]${d.city||"Somewhere"}, ${d.country||""}[/]\nmap visitor${d.vpn?" · VPN":""} · no test yet`});
     cont.children.push(am5.Circle.new(r,{radius:7,fill:am5.color(0x5E7C8C),fillOpacity:.2}));
     cont.children.push(am5.Picture.new(r,{src:d.vpn?ICON.vpn:ICON.user,
@@ -502,7 +502,7 @@ function drawConnections(){
   if(!userLoc)return;
   userSeries.data.setAll([{geometry:{type:"Point",coordinates:[userLoc.lon,userLoc.lat]},label:userLoc.label,vpn:userVpn}]);
   myEdges.forEach(e=>{
-    const hex=e.ping!=null?pingHex(e.ping):0x5E7C8C,grp=lineSeriesByColor[hex];
+    const hex=e.ping!=null?pingHex(e.ping):0xE85D5D,grp=lineSeriesByColor[hex];
     if(!grp)return;
     const ldi=grp.lines.pushDataItem({geometry:{type:"LineString",
       coordinates:[[userLoc.lon,userLoc.lat],[e.lon,e.lat]]}});
@@ -522,19 +522,34 @@ function drawConnections(){
   $("locBtn").disabled=false;
 }
 /* MY LINKS hides ONLY the animated lines — server diamonds stay visible */
-function setLinksVisible(on){
-  const m=on?"show":"hide";
-  Object.values(lineSeriesByColor).forEach(g=>{g.lines[m]();g.packets[m]();});
+/* forceHidden works on the actual sprites — dataItem.hide() is unreliable
+   for map lines and was why "MY LINKS: OFF" left lines on screen */
+function setDIVisible(di,on){
+  if(!di)return;
+  const ml=di.get("mapLine"); if(ml)ml.set("forceHidden",!on);
+  const pg=di.get("mapPolygon"); if(pg)pg.set("forceHidden",!on);
+  (di.bullets||[]).forEach(b=>{const s=b.get("sprite"); s&&s.set("forceHidden",!on);});
 }
+/* the single source of truth for every animated link + site icon */
+function refreshLinks(){
+  Object.entries(conns).forEach(([k,c])=>{
+    const on=linksOn&&svcChecked[k]!==false;
+    setDIVisible(c.ldi,on);setDIVisible(c.pdi,on);
+    c.anim&&(on?c.anim.play():c.anim.pause());
+  });
+  Object.entries(siteConns).forEach(([,c])=>{
+    setDIVisible(c.di,!!c.checked);                 // site icon follows its checkbox
+    const on=linksOn&&!!c.checked;                  // its link also obeys MY LINKS
+    setDIVisible(c.ldi,on);setDIVisible(c.pdi,on);
+    c.anim&&(on?c.anim.play():c.anim.pause());
+  });
+}
+function setLinksVisible(){ refreshLinks(); }
 /* per-service visibility: diamond(s) + its animated link */
 function applyService(key,on){
   svcChecked[key]=on;
-  (svcItems[key]||[]).forEach(di=>on?di.show():di.hide());
-  const c=conns[key];
-  if(c){
-    if(on&&linksOn){c.ldi.show();c.pdi.show();c.anim&&c.anim.play();}
-    else{c.ldi.hide();c.pdi.hide();c.anim&&c.anim.pause();}
-  }
+  (svcItems[key]||[]).forEach(di=>setDIVisible(di,on));
+  refreshLinks();
 }
 function buildServerDropdown(){
   const list=$("srvList");list.innerHTML="";
@@ -613,7 +628,7 @@ $("lnkBtn").addEventListener("click",()=>{
   linksOn=!linksOn;
   $("lnkBtn").classList.toggle("on",linksOn);
   $("lnkBtn").textContent=linksOn?"◆ MY LINKS: ON":"◆ MY LINKS: OFF";
-  applyVisibility();
+  refreshLinks();
 });
 
 /* rail toggle — floating windows slide away on mobile */
@@ -677,26 +692,23 @@ async function resolveSite(dom){
   return out;
 }
 async function toggleSite(dom,on,msEl){
-  if(!on){
-    const c=siteConns[dom];
-    if(c){c.di&&c.di.hide(0);c.ldi&&c.ldi.hide(0);c.pdi&&c.pdi.hide(0);c.anim&&c.anim.pause();}
-    return;
-  }
-  if(siteConns[dom]){ // re-check: just show again
-    const c=siteConns[dom];
-    c.di&&c.di.show();c.ldi&&c.ldi.show();c.pdi&&c.pdi.show();c.anim&&c.anim.play();
-    return;
-  }
+  const existing=siteConns[dom];
+  if(existing){ existing.checked=on; refreshLinks(); return; }
+  if(!on) return;
   msEl.textContent="…";
   const s=await resolveSite(dom);
   msEl.textContent=s.ping!=null?s.ping+" ms":"✕";
   if(s.lat==null){msEl.title="couldn't geolocate this site";return;}
-  const di=serverSeries.pushDataItem({geometry:{type:"Point",coordinates:[s.lon,s.lat]},
+  // data.push sets dataContext — pushDataItem does NOT, and a bullet factory
+  // reading undefined dataContext throws inside the render loop and freezes
+  // the whole chart (the "map hangs" bug)
+  serverSeries.data.push({geometry:{type:"Point",coordinates:[s.lon,s.lat]},
     name:dom,host:dom,ip:s.ip,ping:s.ping,city:s.city,country:s.country,org:s.org,
     type:"site",svc:"site",hex:0x58B7E8,mine:true});
-  const c={di};
+  const di=serverSeries.dataItems[serverSeries.dataItems.length-1];
+  const c={di,checked:true};
   if(userLoc){
-    const grp=lineSeriesByColor[s.ping!=null?pingHex(s.ping):0x5E7C8C];
+    const grp=lineSeriesByColor[s.ping!=null?pingHex(s.ping):0xE85D5D];
     if(grp){
       c.ldi=grp.lines.pushDataItem({geometry:{type:"LineString",
         coordinates:[[userLoc.lon,userLoc.lat],[s.lon,s.lat]]}});
@@ -707,6 +719,7 @@ async function toggleSite(dom,on,msEl){
     }
   }
   siteConns[dom]=c;
+  refreshLinks();
 }
 function buildSiteList(){
   const list=$("siteList");list.innerHTML="";
@@ -761,7 +774,7 @@ async function logAndLoadPresence(){
   buildServerDropdown();
   buildSiteList();
   logAndLoadPresence();
-  if(!linksOn)setLinksVisible(false);
+  refreshLinks();
 })();
 })();
 </script>

@@ -855,8 +855,9 @@ async function runTest(){
   result.jit=jits.length?Math.round(median(jits)):null;
   lastResult=result;
   shareBtn.disabled=!downs.length;
-  shareBtn.title=downs.length?"Create a shareable link":"Run a test first";
-  submitStat(result);
+  shareBtn.title=downs.length?"Copy your shareable link":"Run a test first";
+  await submitStat(result);          // registers the test + servers on the map
+  if(downs.length) makeShareLink(true); // share link appears automatically
   phaseEl.textContent=downs.length
     ? `Done — ${downs.length} of ${SOURCES.length} sources measured. Cross-check below ↓`
     : "All sources failed — are you opening this file locally? Ad-blockers can also interfere.";
@@ -966,7 +967,7 @@ async function submitStat(r){ // anonymous aggregate for the global map (no IP s
   }catch{}
 }
 
-shareBtn.addEventListener("click",async()=>{
+async function makeShareLink(auto){
   if(!lastResult) return;
   const base=new URL("result.html",location.href).href;
   let link;
@@ -977,8 +978,9 @@ shareBtn.addEventListener("click",async()=>{
   if(!link) link=`${base}#d=${encodeResult(lastResult)}`; // serverless: data travels in the link
   shareUrl.value=link; openResult.href=link;
   sharebar.classList.add("show");
-  shareUrl.focus(); shareUrl.select();
-});
+  if(!auto){ shareUrl.focus(); shareUrl.select(); } // don't steal focus mid-flow
+}
+shareBtn.addEventListener("click",()=>makeShareLink(false));
 copyBtn.addEventListener("click",async()=>{
   try{ await navigator.clipboard.writeText(shareUrl.value); copyBtn.textContent="Copied ✓"; }
   catch{ shareUrl.select(); document.execCommand("copy"); copyBtn.textContent="Copied ✓"; }
