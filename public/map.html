@@ -82,39 +82,35 @@
   #locBtn:disabled{opacity:.35;cursor:default;}
   #locBtn:focus-visible{outline:2px solid var(--cyan);}
   .dd{position:relative;}
-  .ddlist{position:absolute;top:calc(100% + 8px);left:0;min-width:240px;z-index:85;
+  .ddtabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:8px;}
+  .ddtabs button{flex:1;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+    background:none;border:none;color:var(--muted);padding:7px 4px;cursor:pointer;
+    border-bottom:2px solid transparent;}
+  .ddtabs button.on{color:var(--cyan);border-bottom-color:var(--cyan);}
+  .ddpane{max-height:min(430px,60vh);overflow-y:auto;scrollbar-width:thin;}
+  .ddlist{position:absolute;top:calc(100% + 8px);left:0;min-width:262px;z-index:85;
     background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;
     backdrop-filter:blur(8px);max-height:62vh;overflow-y:auto;box-shadow:0 0 24px rgba(56,224,199,.14);}
   .ddlist label{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11.5px;
     color:var(--ink);padding:5px 2px;cursor:pointer;}
   .ddlist input{accent-color:var(--cyan);width:13px;height:13px;flex:none;cursor:pointer;}
   .ddlist .host{color:var(--muted);font-size:10px;margin-left:auto;}
+  .ddrow{display:flex;align-items:center;gap:6px;}
+  .ddrow label{flex:1;min-width:0;}
+  .pingbtn{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;color:var(--cyan);
+    background:rgba(56,224,199,.1);border:1px solid var(--line);border-radius:6px;
+    padding:3px 8px;cursor:pointer;flex:none;min-width:44px;}
+  .pingbtn:disabled{opacity:.5;}
+  .ddtabs{display:flex;gap:6px;margin-bottom:8px;border-bottom:1px solid var(--line-soft);padding-bottom:8px;}
+  .ddtabs button{flex:1;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+    background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);
+    padding:6px 4px;cursor:pointer;}
+  .ddtabs button.on{background:rgba(56,224,199,.14);color:var(--cyan);}
+  .ddnote{font-family:var(--mono);font-size:9.5px;color:var(--muted);line-height:1.6;
+    padding:2px 2px 8px;border-bottom:1px solid var(--line-soft);margin-bottom:6px;}
   #loadmsg{position:fixed;z-index:55;inset:0;display:flex;align-items:center;justify-content:center;
     font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:.2em;text-transform:uppercase;}
-  /* ═══ right rail: site links (hidden by default) ═══ */
-  #rrail{position:fixed;z-index:70;right:18px;top:70px;bottom:18px;width:272px;
-    max-width:calc(100vw - 36px);display:flex;flex-direction:column;gap:12px;
-    transition:transform .28s ease,opacity .28s ease;}
-  #rrail.hidden{transform:translateX(115%);opacity:0;pointer-events:none;}
-  #rrail .win{display:flex;flex-direction:column;min-height:0;flex:1;}
-  #siteList{overflow-y:auto;min-height:0;flex:1;margin-top:4px;scrollbar-width:thin;}
-  #siteList label{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;
-    color:var(--ink);padding:3px 0;cursor:pointer;border-top:1px solid var(--line-soft);}
-  #siteList input.cbp{accent-color:var(--cyan);flex:none;}
-  #siteList input.cbl{accent-color:var(--magenta);flex:none;}
-  #siteList .shead{display:flex;gap:8px;font-family:var(--mono);font-size:8.5px;
-    letter-spacing:.06em;color:var(--muted);padding:2px 0;}
-  #siteList .shead span:nth-child(2){margin-left:-2px;}
-  #siteList .dom{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  #siteList .ms{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;}
-  #rrailToggle{position:fixed;z-index:75;right:0;top:42%;transform:translateY(-50%);
-    font-family:var(--mono);font-size:13px;font-weight:600;color:var(--cyan);
-    background:var(--panel);border:1px solid var(--line);border-right:none;
-    border-radius:10px 0 0 10px;padding:14px 9px;cursor:pointer;backdrop-filter:blur(6px);
-    box-shadow:0 0 16px rgba(56,224,199,.18);transition:right .28s ease;}
-  #rrailToggle.open{right:min(290px,calc(100vw - 36px + 18px));}
-  #rrailToggle:focus-visible{outline:2px solid var(--cyan);}
-  @media(max-width:680px){ .sub{display:none;} #rail{width:250px;} #railToggle{display:block;} #rrail{width:240px;} }
+  @media(max-width:680px){ .sub{display:none;} #rail{width:250px;} #railToggle{display:block;} }
   @media (prefers-reduced-motion:reduce){ body::after{display:none;} }
 </style>
 </head>
@@ -134,23 +130,24 @@
   <div class="seg"><button id="lnkBtn" class="srv on">◆ MY LINKS: ON</button></div>
   <div class="dd">
     <div class="seg"><button id="srvDD">◇ SERVERS ▾</button></div>
-    <div class="ddlist" id="srvList" hidden></div>
+    <div class="ddlist" id="srvList" hidden>
+      <div class="ddtabs">
+        <button id="ddTabSrv" class="on">TEST SERVERS</button>
+        <button id="ddTabSites">SITE LINKS</button>
+      </div>
+      <div class="ddpane" id="ddSrv"></div>
+      <div class="ddpane" id="ddSites" style="display:none;">
+        <div class="shead" style="display:flex;gap:8px;font-family:var(--mono);font-size:8.5px;letter-spacing:.06em;color:var(--muted);padding:2px 0;"><span title="draw my live connection">PING</span><span title="pulse every known server, worldwide">LOCATE</span><span></span></div>
+        <div id="siteList"></div>
+        <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);border-top:1px solid var(--line-soft);margin-top:6px;padding-top:6px;line-height:1.5;">servers stay on the map forever once recorded — by you or any tester worldwide</div>
+      </div>
+    </div>
   </div>
   <div class="spacer"></div>
   <a class="back" href="./">← RUN A SPEED TEST</a>
 </div>
 
 <button id="locBtn" title="Focus my location" aria-label="Focus my location" disabled>◎</button>
-<button id="rrailToggle" aria-label="Show site links" aria-expanded="false">&lt;&lt;&lt;</button>
-<div id="rrail" class="hidden">
-  <div class="win">
-    <div class="ttl">◈ Site links — live ping targets</div>
-    <div class="row" style="justify-content:flex-start;">PING = my live line · LOCATE = pulse all its known servers worldwide</div>
-    <div id="siteList"></div>
-    <div class="row" style="border-top:1px solid var(--line-soft);margin-top:6px;padding-top:6px;">
-      <span>servers stay on the map forever once recorded — by you or any tester worldwide</span></div>
-  </div>
-</div>
 <button id="railToggle" aria-label="Show info panels" aria-expanded="true">&gt;&gt;&gt;</button>
 <!-- every floating window sits in this left rail -->
 <div id="rail">
@@ -159,6 +156,12 @@
     <h3><span id="pGlyph">◈</span><span id="pTitle"></span><button class="close" id="pClose" aria-label="Close">✕</button></h3>
     <div class="rows" id="pRows"></div>
     <div class="note" id="pNote"></div>
+  </div>
+
+  <div class="win" id="cluster" style="display:none;">
+    <div class="ttl" id="clTitle">AT THIS LOCATION</div>
+    <div id="clRows"></div>
+    <div class="row" style="border-top:1px solid var(--line-soft);margin-top:6px;"><span>multiple servers &amp; people share this spot — IPs are never shown</span></div>
   </div>
 
   <div class="win" id="conn">
@@ -221,6 +224,14 @@ const SERVICES=[
  {key:"stat", name:"Statically",         host:"cdn.statically.io",         hex:0xB4C94A, ping:()=> "https://cdn.statically.io/gh/dwyl/english-words@master/README.md?cb="+Math.random()}
 ];
 const OTHER={key:"other",name:"Other edges",hex:0xFF3FA4};
+/* popular site link targets — extend freely; each gets a cycled color */
+const SITELINKS=["google.com","youtube.com","facebook.com","instagram.com","chatgpt.com",
+"reddit.com","wikipedia.org","x.com","whatsapp.com","tiktok.com","amazon.com","yahoo.com",
+"bing.com","duckduckgo.com","weather.com","linkedin.com","msn.com","netflix.com",
+"microsoft.com","pinterest.com","live.com","twitch.tv","github.com","claude.ai",
+"spotify.com","canva.com","temu.com","ebay.com","openai.com","discord.com"];
+const SITEPAL=[0xF0A04B,0xE85D5D,0x5B8DEF,0xEF7BA8,0x2FC1C1,0xA78BFA,0x4FBF7A,0x58B7E8,0xB4C94A,0xFF3FA4,0xF0C04B,0x9AE66E];
+const SITESVCS=SITELINKS.map((d,i)=>({key:"site:"+d,name:d,host:d,hex:SITEPAL[i%SITEPAL.length],ping:null,site:true}));
 const ICON={user:"icons/user.png",vpn:"icons/vpn.png",server:"icons/server.png",hop:"icons/hop.png"};
 /* VPN heuristic: consumer ISPs don't live in data centers. If the visitor's
    network org is a hosting/VPN company, they're almost certainly on a VPN. */
@@ -229,7 +240,7 @@ const looksVpn=org=>VPN_RE.test(String(org||""));
 let userVpn=false;
 const SITES=["google.com","youtube.com","facebook.com","instagram.com","chatgpt.com","reddit.com","wikipedia.org","x.com","pornhub.com","whatsapp.com","tiktok.com","xvideos.com","amazon.com","yahoo.com","bing.com","duckduckgo.com","yahoo.co.jp","xhamster.com","weather.com","linkedin.com","msn.com","netflix.com","temu.com","yandex.ru","microsoft.com","pinterest.com","live.com","twitch.tv","xnxx.com","github.com","claude.ai","spotify.com","canva.com","naver.com","imdb.com","paypal.com","apple.com","roblox.com","twitter.com","globo.com","vk.com","aliexpress.com","openai.com","dailymotion.com","nytimes.com","ebay.com","walmart.com","telegram.org","office.com","booking.com","gemini.google.com","baidu.com","bet.br","cloud.microsoft","bilibili.com","dzen.ru","news.yahoo.co.jp","fandom.com","mail.ru","samsung.com","discord.com","stripchat.com"];
 const hexCss=x=>"#"+x.toString(16).padStart(6,"0");
-const svcByHost=Object.fromEntries(SERVICES.map(s=>[s.host,s]));
+const svcByHost=Object.fromEntries(SERVICES.concat(SITESVCS).map(s=>[s.host,s]));
 
 /* service colors — every server of a service shares its hue */
 
@@ -292,6 +303,7 @@ function showPanel(item,isServer){
   }
   panel.style.display="block";
   if(!railOpen)setRail(true); // detail panels live in the rail — reveal it
+  if(item.lat!=null&&item.lon!=null)showCluster(item.lat,item.lon);
 }
 
 /* ============ chart (amCharts 5 — animated lines, like the amcharts demo) ============ */
@@ -346,7 +358,7 @@ function buildChart(){
   grat.mapLines.template.setAll({stroke:am5.color(0x38E0C7),strokeOpacity:.07});
 
   // connection lines — one series per ping-color for clean per-line styling
-  [0x38E0C7,0x5BD97A,0xF0C04B,0xE85D5D].forEach(hex=>{
+  [0x38E0C7,0x5BD97A,0xF0C04B,0xE85D5D,0x5E7C8C].forEach(hex=>{
     const ls=chart.series.push(am5map.MapLineSeries.new(root,{}));
     ls.mapLines.template.setAll({stroke:am5.color(hex),strokeOpacity:.5,strokeWidth:1.4,
       shadowColor:am5.color(hex),shadowBlur:8,shadowOpacity:.6});
@@ -385,6 +397,20 @@ function buildChart(){
       width:d.mine?16:12,height:d.mine?16:12,centerX:am5.p50,centerY:am5.p50,
       opacity:d.mine?1:.75}));
     cont.events.on("click",()=>showPanel(d,true));
+    return am5.Bullet.new(r,{sprite:cont});
+  });
+
+  // anonymous ping-origin markers
+  originSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
+  originSeries.set("tooltip",makeTooltip(0x38E0C7));
+  originSeries.bullets.push((r,s,dataItem)=>{
+    const d=dataItem.dataContext;
+    const cont=am5.Container.new(r,{cursorOverStyle:"pointer",
+      tooltipText:`[bold]◎ ping origin[/]\n${[d.city,d.country].filter(Boolean).join(", ")||"unknown"}\n${d.n} tester${d.n===1?"":"s"} pinged from here`});
+    cont.children.push(am5.Circle.new(r,{radius:5.5,fill:am5.color(0x38E0C7),fillOpacity:0,
+      stroke:am5.color(0x38E0C7),strokeOpacity:.7,strokeWidth:1}));
+    cont.children.push(am5.Circle.new(r,{radius:1.8,fill:am5.color(0x38E0C7),fillOpacity:.85}));
+    cont.events.on("click",()=>showCluster(d.lat,d.lon));
     return am5.Bullet.new(r,{sprite:cont});
   });
 
@@ -430,7 +456,7 @@ function setGlobePoints(){
 /* ============ your live connections + global edge registry ============ */
 let userLoc=null,myEdges=[],edges=[];
 const conns={},svcItems={},svcChecked={};
-SERVICES.concat([OTHER]).forEach(s=>svcChecked[s.key]=true);
+SERVICES.concat(SITESVCS,[OTHER]).forEach(s=>svcChecked[s.key]=true);
 async function detectUser(){
   try{
     const j=await fetch("https://speed.cloudflare.com/meta",{cache:"no-store",signal:AbortSignal.timeout(7000)}).then(r=>r.json());
@@ -473,11 +499,45 @@ async function loadEdge(svc){
       city:g.city||"",country:g.country_code||""};
   }catch{return null;}
 }
+async function pingSiteMs(host){
+  // cross-origin sites block CORS reads, but a no-cors fetch still measures
+  // real connection time (DNS+TCP+TLS+first byte) — an honest ping estimate
+  const t=[];
+  for(let i=0;i<2;i++){
+    const t0=performance.now();
+    try{
+      await fetch("https://"+host+"/?cb="+Math.random(),
+        {mode:"no-cors",cache:"no-store",signal:AbortSignal.timeout(6000)});
+      t.push(performance.now()-t0);
+    }catch{}
+  }
+  return t.length?Math.round(Math.min(...t)):null;
+}
+function logEdges(list){
+  fetch("/api/servers",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({servers:list.map(({name,host,ip,lat,lon,org,city,country})=>
+      ({name,host,ip,lat,lon,org,city,country}))})}).catch(()=>{});
+}
+async function pingSite(svc,btn){
+  if(btn){btn.disabled=true;btn.textContent="…";}
+  const e=await loadEdge(svc);
+  if(e){
+    e.ping=await pingSiteMs(svc.host);
+    const k=e.host+"|"+e.ip;
+    myEdges=myEdges.filter(x=>x.host+"|"+x.ip!==k);myEdges.push(e);
+    edges=edges.filter(x=>x.host+"|"+x.ip!==k);edges.push(e);
+    logEdges([e]);          // persists globally — stays on everyone's map
+    setGlobeServers();
+    addLink(e);
+    buildLocIndex();
+  }
+  if(btn){btn.disabled=false;btn.textContent=e?(e.ping!=null?e.ping+"ms":"✓"):"✕";}
+  buildServerDropdown();
+  return e;
+}
 async function shareAndFetchEdges(){
   // log MY edges so testers in other regions see them, then pull everyone's
-  fetch("/api/servers",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({servers:myEdges.map(({name,host,ip,lat,lon,org,city,country})=>
-      ({name,host,ip,lat,lon,org,city,country}))})}).catch(()=>{});
+  logEdges(myEdges);
   let remote=[];
   try{
     const r=await fetch("/api/servers",{signal:AbortSignal.timeout(8000)});
@@ -502,6 +562,22 @@ function setGlobeServers(){
   });
   Object.entries(svcChecked).forEach(([k,on])=>{ if(!on)applyService(k,false); });
 }
+function addLink(e){
+  if(!userLoc)return;
+  const old=conns[e.svc];
+  if(old){old.ldi.hide();old.pdi.hide();old.anim&&old.anim.stop();}
+  const hex=e.ping!=null?pingHex(e.ping):0x5E7C8C,grp=lineSeriesByColor[hex];
+  if(!grp)return;
+  const ldi=grp.lines.pushDataItem({geometry:{type:"LineString",
+    coordinates:[[userLoc.lon,userLoc.lat],[e.lon,e.lat]]}});
+  const pdi=grp.packets.pushDataItem({lineDataItem:ldi,positionOnLine:0});
+  const dur=Math.max(1100,Math.min(4200,(e.ping??150)*22));
+  const anim=pdi.animate({key:"positionOnLine",from:0,to:1,
+    duration:dur,loops:Infinity,easing:am5.ease.inOut(am5.ease.quad)});
+  packetAnims.push(anim);
+  conns[e.svc]={ldi,pdi,anim};
+  if(svcChecked[e.svc]===false||!linksOn){ldi.hide();pdi.hide();anim.pause();}
+}
 function drawConnections(){
   if(!userLoc)return;
   userSeries.data.setAll([{geometry:{type:"Point",coordinates:[userLoc.lon,userLoc.lat]},label:userLoc.label,vpn:userVpn}]);
@@ -520,10 +596,48 @@ function drawConnections(){
   });
   const ps=myEdges.map(e=>e.ping).filter(p=>p!=null);
   $("cLoc").textContent=userLoc.label||"located";
-  $("cSrv").textContent=myEdges.length+" / "+SERVICES.length;
+  $("cSrv").textContent=myEdges.filter(e=>!String(e.svc).startsWith("site:")).length+" / "+SERVICES.length;
   $("cBest").textContent=ps.length?Math.min(...ps)+" ms":"—";
   $("cMed").textContent=ps.length?median(ps)+" ms":"—";
   $("locBtn").disabled=false;
+}
+/* origins: anonymous "someone pinged from here" markers (city-level, no IPs) */
+let origins=[],originSeries=null;
+async function loadOrigins(){
+  if(userLoc)fetch("/api/origins",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({lat:userLoc.lat,lon:userLoc.lon,city:userLoc.city,country:userLoc.country})}).catch(()=>{});
+  try{
+    const r=await fetch("/api/origins",{signal:AbortSignal.timeout(8000)});
+    if(r.ok){const j=await r.json();if(Array.isArray(j))origins=j;}
+  }catch{}
+  originSeries.data.setAll(origins.map(o=>({geometry:{type:"Point",coordinates:[o.lon,o.lat]},...o})));
+}
+/* co-location index: multiple servers/sites/people at the same spot */
+const locKey=(la,lo)=>(+la).toFixed(1)+"|"+(+lo).toFixed(1);
+let locIndex={};
+function buildLocIndex(){
+  locIndex={};
+  const push=(la,lo,item)=>{const k=locKey(la,lo);(locIndex[k]=locIndex[k]||[]).push(item);};
+  edges.forEach(e=>push(e.lat,e.lon,{t:"edge",e}));
+  origins.forEach(o=>push(o.lat,o.lon,{t:"origin",o}));
+  points.forEach(p=>push(p.lat,p.lon,{t:"testers",p}));
+}
+function showCluster(lat,lon){
+  const items=(locIndex[locKey(lat,lon)]||[]);
+  const win=$("cluster"),rows=$("clRows");
+  if(items.length<2){win.style.display="none";return;}
+  rows.innerHTML="";
+  const place=items.map(i=>i.e?.city||i.o?.city||i.p?.city).find(Boolean)||"this location";
+  $("clTitle").textContent=`AT ${String(place).toUpperCase()} (${items.length} instances)`;
+  items.forEach(i=>{
+    const d=document.createElement("div");d.className="row lrow";
+    if(i.t==="edge")d.innerHTML=`<span class="dia" style="background:${hexCss(i.e.hex||0xFF3FA4)};color:${hexCss(i.e.hex||0xFF3FA4)}"></span><span>${i.e.name}<span style="color:var(--muted)"> · ${i.e.ip||i.e.host}</span></span>`;
+    else if(i.t==="origin")d.innerHTML=`<span class="dot" style="background:var(--cyan);color:var(--cyan)"></span><span>${i.o.n} tester${i.o.n===1?"":"s"} pinged from here${i.o.n>1?" (VPN exits land here too)":""}</span>`;
+    else d.innerHTML=`<span class="dot" style="background:${speedColor(i.p.down)};color:${speedColor(i.p.down)}"></span><span>${i.p.n||1} speed test${(i.p.n||1)===1?"":"s"} · avg ${fmt(i.p.down)} Mbps</span>`;
+    rows.appendChild(d);
+  });
+  win.style.display="block";
+  if(!railOpen)setRail(true);
 }
 /* MY LINKS hides ONLY the animated lines — server diamonds stay visible */
 /* forceHidden works on the actual sprites — dataItem.hide() is unreliable
@@ -555,23 +669,59 @@ function applyService(key,on){
   (svcItems[key]||[]).forEach(di=>setDIVisible(di,on));
   refreshLinks();
 }
+let ddTab="servers";
+function ddRow(s){
+  const n=(svcItems[s.key]||[]).length;
+  const row=document.createElement("div");row.className="ddrow";
+  const l=document.createElement("label");
+  l.innerHTML=`<input type="checkbox" ${svcChecked[s.key]?"checked":""}>
+    <span class="dia" style="background:${hexCss(s.hex)};color:${hexCss(s.hex)}"></span>
+    ${s.name}<span class="host">${n} edge${n===1?"":"s"}</span>`;
+  l.querySelector("input").addEventListener("change",e=>applyService(s.key,e.target.checked));
+  row.appendChild(l);
+  if(s.site){
+    const b=document.createElement("button");b.className="pingbtn";b.textContent="PING";
+    b.title="Ping "+s.host+" — locates its edge and pins it on everyone's map";
+    b.addEventListener("click",ev=>{ev.stopPropagation();pingSite(s,b);});
+    row.appendChild(b);
+  }
+  return row;
+}
 function buildServerDropdown(){
   const list=$("srvList");list.innerHTML="";
-  const items=SERVICES.concat(svcItems.other?[OTHER]:[]);
-  items.forEach(s=>{
-    const n=(svcItems[s.key]||[]).length;
-    const l=document.createElement("label");
-    l.innerHTML=`<input type="checkbox" ${svcChecked[s.key]?"checked":""} data-k="${s.key}">
-      <span class="dia" style="background:${hexCss(s.hex)};color:${hexCss(s.hex)}"></span>
-      ${s.name}<span class="host">${n} edge${n===1?"":"s"}</span>`;
-    l.querySelector("input").addEventListener("change",e=>applyService(s.key,e.target.checked));
-    list.appendChild(l);
+  const tabs=document.createElement("div");tabs.className="ddtabs";
+  [["servers","SERVERS"],["sites","SITE LINKS"]].forEach(([k,t])=>{
+    const b=document.createElement("button");
+    b.textContent=t;b.classList.toggle("on",ddTab===k);
+    b.addEventListener("click",e=>{e.stopPropagation();ddTab=k;buildServerDropdown();});
+    tabs.appendChild(b);
   });
+  list.appendChild(tabs);
+  if(ddTab==="servers"){
+    SERVICES.concat(svcItems.other?[OTHER]:[]).forEach(s=>list.appendChild(ddRow(s)));
+  }else{
+    const note=document.createElement("div");note.className="ddnote";
+    note.textContent="PING measures your live latency and pins the site's edge — it stays on the map for every tester once recorded.";
+    list.appendChild(note);
+    SITESVCS.forEach(s=>list.appendChild(ddRow(s)));
+  }
 }
 $("srvDD").addEventListener("click",e=>{
+  if(e.target.closest("#srvList"))return; // clicks inside the panel don't close it
   e.stopPropagation();
   $("srvList").hidden=!$("srvList").hidden;
+  if(!$("srvList").hidden)refreshSiteCounts();
 });
+$("srvList").addEventListener("click",e=>e.stopPropagation());
+function setDDTab(sites){
+  $("ddTabSrv").classList.toggle("on",!sites);
+  $("ddTabSites").classList.toggle("on",sites);
+  $("ddSrv").style.display=sites?"none":"block";
+  $("ddSites").style.display=sites?"block":"none";
+  if(sites)refreshSiteCounts();
+}
+$("ddTabSrv").addEventListener("click",()=>setDDTab(false));
+$("ddTabSites").addEventListener("click",()=>setDDTab(true));
 document.addEventListener("click",e=>{
   if(!$("srvList").hidden&&!e.target.closest(".dd"))$("srvList").hidden=true;
 });
@@ -754,33 +904,26 @@ async function toggleLocate(dom,on,msEl){
     locatePulses[dom].push({anim,sprite,op:sprite.get("opacity",1)});
   }));
 }
+function refreshSiteCounts(){
+  document.querySelectorAll("#siteList label").forEach(l=>{
+    const dom=l.querySelector(".dom").textContent;
+    const n=findSiteDIs(dom).length;
+    l.querySelector(".ecount").textContent=n?`${n} edge${n===1?"":"s"}`:"";
+  });
+}
 function buildSiteList(){
   const list=$("siteList");list.innerHTML="";
-  const head=document.createElement("div");
-  head.className="shead";
-  head.innerHTML=`<span title="draw my live connection">PING</span><span title="pulse every known server of this site, worldwide">LOCATE</span><span></span>`;
-  list.appendChild(head);
   SITES.forEach(dom=>{
     const l=document.createElement("label");
     l.innerHTML=`<input type="checkbox" class="cbp" title="ping — draw my live connection">
       <input type="checkbox" class="cbl" title="locate — heartbeat every known server of ${dom}">
-      <span class="dom">${dom}</span><span class="ms">—</span>`;
+      <span class="dom">${dom}</span><span class="ms">—</span><span class="host ecount"></span>`;
     const ms=l.querySelector(".ms");
     l.querySelector(".cbp").addEventListener("change",e=>togglePing(dom,e.target.checked,ms));
     l.querySelector(".cbl").addEventListener("change",e=>toggleLocate(dom,e.target.checked,ms));
     list.appendChild(l);
   });
 }
-const rrail=$("rrail"),rrailToggle=$("rrailToggle");
-let rrailOpen=false;
-function setRRail(open){ // <<< reveals, >>> hides — mirrored on the right edge
-  rrailOpen=open;
-  rrail.classList.toggle("hidden",!open);
-  rrailToggle.classList.toggle("open",open);
-  rrailToggle.innerHTML=open?"&gt;&gt;&gt;":"&lt;&lt;&lt;";
-  rrailToggle.setAttribute("aria-expanded",open);
-}
-rrailToggle.addEventListener("click",()=>setRRail(!rrailOpen));
 
 /* ============ visitor presence: map opens are recorded too ============ */
 async function logAndLoadPresence(){
@@ -811,6 +954,8 @@ async function logAndLoadPresence(){
   await shareAndFetchEdges();   // log my edges globally, pull everyone else's
   setGlobeServers();
   drawConnections();
+  await loadOrigins();          // anonymous "pinged from here" markers
+  buildLocIndex();
   buildServerDropdown();
   buildSiteList();
   logAndLoadPresence();

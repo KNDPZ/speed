@@ -7,8 +7,10 @@
  *   POST /api/results        store a result   -> { id }
  *   GET  /api/results/:id    fetch a result   -> result JSON
  *   GET  /api/stats?range=24h|7d|30d          -> [{city,country,lat,lon,down,up,ping,n}]
- *   POST /api/servers        log CDN edges a visitor's region resolved
- *   GET  /api/servers        all edges seen globally in the last 30 days
+ *   POST /api/servers        log CDN/site edges a visitor's region resolved
+ *   GET  /api/servers        every edge ever recorded (they persist)
+ *   POST /api/origins        count an anonymous ping origin (city-level, no IP)
+ *   GET  /api/origins        all origins with counts
  * Privacy: client IP is never stored. Geo (city/lat/lon) comes from
  * Cloudflare's edge metadata, rounded to ~city precision.
  */
@@ -18,6 +20,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
+const stubOf = (env) => env.SPEED_DB.get(env.SPEED_DB.idFromName("global"));
 const json = (o, s = 200) =>
   new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json", ...CORS } });
 
@@ -91,6 +94,16 @@ export default {
       }
       return stub.fetch("https://do/presence-get");
     }
+    if (url.pathname === "/api/origins") {
+      if (request.method === "POST") {
+        let b; try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+        const o = { lat: num(b.lat, -90, 90), lon: num(b.lon, -180, 180),
+          city: str(b.city, 40), country: str(b.country, 3) };
+        if (o.lat == null || o.lon == null) return json({ error: "no geo" }, 400);
+        return stubOf(env).fetch("https://do/origins", { method: "POST", body: JSON.stringify(o) });
+      }
+      return stubOf(env).fetch("https://do/origins");
+    }
     if (url.pathname === "/api/servers") {
       if (request.method === "POST") {
         let body;
@@ -129,6 +142,16 @@ export default {
         return stub.fetch("https://do/presence-post", { method: "POST", body: JSON.stringify(rec) });
       }
       return stub.fetch("https://do/presence-get");
+    }
+    if (url.pathname === "/api/origins") {
+      if (request.method === "POST") {
+        let b; try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+        const o = { lat: num(b.lat, -90, 90), lon: num(b.lon, -180, 180),
+          city: str(b.city, 40), country: str(b.country, 3) };
+        if (o.lat == null || o.lon == null) return json({ error: "no geo" }, 400);
+        return stubOf(env).fetch("https://do/origins", { method: "POST", body: JSON.stringify(o) });
+      }
+      return stubOf(env).fetch("https://do/origins");
     }
     if (url.pathname === "/api/servers") {
       if (request.method === "POST") {
@@ -177,6 +200,21 @@ export class SpeedDB {
       return rec ? json(rec) : json({ error: "not found" }, 404);
     }
 
+    if (url.pathname === "/origins") {
+      if (request.method === "POST") {
+        const o = JSON.parse(await request.text());
+        const key = "o:" + o.lat.toFixed(1) + "|" + o.lon.toFixed(1);
+        const cur = (await this.storage.get(key)) || { ...o, lat: +o.lat.toFixed(1), lon: +o.lon.toFixed(1), n: 0 };
+        cur.n++; cur.ts = Date.now();
+        if (o.city) cur.city = o.city;
+        if (o.country) cur.country = o.country;
+        await this.storage.put(key, cur);
+        return json({ ok: true, n: cur.n });
+      }
+      const all = await this.storage.list({ prefix: "o:", limit: 1000 });
+      return json([...all.values()]);
+    }
+
     if (url.pathname === "/servers") {
       if (request.method === "POST") {
         const list = JSON.parse(await request.text());
@@ -184,9 +222,8 @@ export class SpeedDB {
           await this.storage.put("srv:" + s.host + "|" + s.ip, { ...s, ts: Date.now() });
         return json({ ok: true, stored: list.length });
       }
-      const all = await this.storage.list({ prefix: "srv:", limit: 500 });
-      const cutoff = Date.now() - 2592e6; // 30 days
-      return json([...all.values()].filter((s) => s.ts > cutoff));
+      const all = await this.storage.list({ prefix: "srv:", limit: 1000 });
+      return json([...all.values()]); // edges stay on the map once recorded
     }
 
     if (url.pathname === "/presence-post") {
@@ -252,9 +289,5 @@ export class SpeedDB {
     const cutoff = "t:" + String(Date.now() - 2592e6 - 864e5).padStart(14, "0");
     const old = await this.storage.list({ prefix: "t:", end: cutoff, limit: 500 });
     if (old.size) await this.storage.delete([...old.keys()]);
-    // stale server edges (>60 days unseen)
-    const srv = await this.storage.list({ prefix: "srv:", limit: 500 });
-    const dead = [...srv.entries()].filter(([, v]) => v.ts < Date.now() - 5184e6).map(([k]) => k);
-    if (dead.length) await this.storage.delete(dead);
   }
 }
