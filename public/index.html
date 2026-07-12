@@ -162,7 +162,22 @@ Also create /ads.txt in the repo root: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT,
 
   /* ---------- source board ---------- */
   .board{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 18px 6px;margin-bottom:18px;box-shadow:var(--shadow);}
-  .board-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;}
+  .board-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
+  .tabs{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;}
+  .tabs button{font-family:var(--mono);font-size:11px;letter-spacing:.06em;background:none;
+    border:none;color:var(--muted);padding:7px 14px;cursor:pointer;}
+  .tabs button.on{background:var(--chip);color:var(--accent,var(--blue));}
+  .site-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0 10px;}
+  .site-controls button{font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer;
+    background:var(--chip);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:7px 14px;}
+  .site-controls button:disabled{opacity:.4;cursor:default;}
+  .site-controls .st{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto;}
+  #siteRows{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px 18px;}
+  #siteRows label{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;
+    padding:5px 0;border-top:1px solid var(--line-soft);cursor:pointer;}
+  #siteRows input{accent-color:var(--accent,var(--blue));flex:none;}
+  #siteRows .dom{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #siteRows .ms{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;font-weight:600;}
   .board-head h2{font-size:15px;font-weight:600;}
   .board-head span{font-family:var(--mono);font-size:11px;color:var(--muted);}
 
@@ -336,13 +351,29 @@ Also create /ads.txt in the repo root: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT,
   <section class="board">
     <div class="board-head">
       <h2>Measured sources</h2>
-      <span>live bar: log scale · Mbps</span>
+      <div class="tabs" role="tablist">
+        <button id="tabSrc" class="on">SOURCES</button>
+        <button id="tabSites">POPULAR SITES</button>
+      </div>
+      <span id="boardHint">live bar: log scale · Mbps</span>
     </div>
+    <div id="siteTab" style="display:none;">
+      <div class="site-controls">
+        <button id="pingAll">PING ALL</button>
+        <button id="pingSel">PING SELECTED</button>
+        <button id="selAll">SELECT ALL</button>
+        <button id="selNone">CLEAR</button>
+        <span class="st" id="siteStatus">latency to the world's most-visited sites — check any, or ping everything</span>
+      </div>
+      <div id="siteRows"></div>
+    </div>
+    <div id="srcTab">
     <div class="cols">
       <b>Source</b><b class="col-ip">Server IP</b><b class="num">Ping</b><b class="num">Down</b><b class="num">Up</b>
       <div class="scale col-bar" id="scale"></div>
     </div>
     <div id="lanes"></div>
+    </div>
   </section>
 
   <div class="lower">
@@ -538,6 +569,7 @@ async function detectIdentity(){
     const j=await r.json();
     $("idIp").textContent=j.clientIp||"—";
     $("idIsp").textContent=(j.asOrganization||"unknown")+(j.asn?` (AS${j.asn})`:"");
+    userVpn=looksVpn(j.asOrganization);
     $("idLoc").textContent=[j.city,j.country].filter(Boolean).join(", ")||"—";
     $("idStatus").textContent="Online";
     return;
@@ -547,6 +579,7 @@ async function detectIdentity(){
     const j=await r.json();
     $("idIp").textContent=j.ip||"—";
     $("idIsp").textContent=(j.connection&&j.connection.isp)||"unknown";
+    userVpn=looksVpn(j.connection&&j.connection.isp);
     $("idLoc").textContent=[j.city,j.country_code].filter(Boolean).join(", ")||"—";
     $("idStatus").textContent="Online";
   }catch{
@@ -753,7 +786,7 @@ async function runTest(){
   drawSpark();
 
   const downs=[],pings=[],jits=[]; let bestUp=null;
-  const result={v:1, ts:Date.now(), isp:$("idIsp").textContent, loc:$("idLoc").textContent, sources:[]};
+  const result={v:1, ts:Date.now(), isp:$("idIsp").textContent, loc:$("idLoc").textContent, vpn:userVpn, sources:[]};
 
   for(const src of SOURCES){
     const ui=lane[src.id];
@@ -831,6 +864,89 @@ async function runTest(){
 }
 
 runBtn.addEventListener("click",runTest);
+
+/* ================= popular sites tab ================= */
+const VPN_RE=/vpn|proxy|hosting|host(?:ed|ing)?\b|cloud|data ?cent|dedicated|colo|m247|ovh|hetzner|digital ?ocean|leaseweb|datacamp|packethub|proton|nordvpn|expressvpn|surfshark|mullvad|windscribe|vultr|linode|contabo|gcore|servers?\b/i;
+const looksVpn=org=>VPN_RE.test(String(org||""));
+var userVpn=false;
+const POP_SITES=["google.com","youtube.com","facebook.com","instagram.com","chatgpt.com","reddit.com","wikipedia.org","x.com","pornhub.com","whatsapp.com","tiktok.com","xvideos.com","amazon.com","yahoo.com","bing.com","duckduckgo.com","yahoo.co.jp","xhamster.com","weather.com","linkedin.com","msn.com","netflix.com","temu.com","yandex.ru","microsoft.com","pinterest.com","live.com","twitch.tv","xnxx.com","github.com","claude.ai","spotify.com","canva.com","naver.com","imdb.com","paypal.com","apple.com","roblox.com","twitter.com","globo.com","vk.com","aliexpress.com","openai.com","dailymotion.com","nytimes.com","ebay.com","walmart.com","telegram.org","office.com","booking.com","gemini.google.com","baidu.com","bet.br","cloud.microsoft","bilibili.com","dzen.ru","news.yahoo.co.jp","fandom.com","mail.ru","samsung.com","discord.com","stripchat.com"];
+
+const siteRowsEl=$("siteRows"),siteStatus=$("siteStatus");
+const siteEls={},siteRegistered=new Set();
+POP_SITES.forEach(dom=>{
+  const l=document.createElement("label");
+  l.innerHTML=`<input type="checkbox"><span class="dom">${dom}</span><span class="ms">—</span>`;
+  siteRowsEl.appendChild(l);
+  siteEls[dom]={cb:l.querySelector("input"),ms:l.querySelector(".ms")};
+  // single-site ping on check (unchecking just deselects)
+  siteEls[dom].cb.addEventListener("change",e=>{ if(e.target.checked&&!pingBusy)pingSites([dom],false); });
+});
+
+async function pingSite(dom){
+  // opaque no-cors round-trip: response bodies are unreadable cross-site,
+  // but DNS+TCP+TLS+TTFB timing is real — this is latency, not bandwidth
+  const t=[];
+  for(let i=0;i<2;i++){
+    const t0=performance.now();
+    try{
+      await fetch("https://"+dom+"/?cb="+Math.random(),{mode:"no-cors",cache:"no-store",
+        signal:AbortSignal.timeout(6000)});
+      t.push(performance.now()-t0);
+    }catch{}
+  }
+  return t.length?Math.round(Math.min(...t)):null;
+}
+function registerSite(dom){
+  // put this site's edge on the global map (DNS → geo → /api/servers)
+  if(siteRegistered.has(dom))return; siteRegistered.add(dom);
+  (async()=>{try{
+    const dns=await fetch(`https://dns.google/resolve?name=${dom}&type=A`,{cache:"no-store"}).then(r=>r.json());
+    const ip=(((dns.Answer||[]).find(x=>x.type===1))||{}).data; if(!ip)return;
+    const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(!g||g.success===false||g.latitude==null)return;
+    fetch("/api/servers",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({list:[{name:dom,host:dom,ip,lat:g.latitude,lon:g.longitude,
+        city:g.city||"",country:g.country_code||"",org:(g.connection&&g.connection.org)||"",
+        type:"site"}]}),signal:AbortSignal.timeout(6000)}).catch(()=>{});
+  }catch{}})();
+}
+var pingBusy=false;
+async function pingSites(list,batch){
+  if(pingBusy||!list.length)return;
+  pingBusy=true;
+  [$("pingAll"),$("pingSel")].forEach(b=>b.disabled=true);
+  let done=0;
+  list.forEach(d=>siteEls[d].ms.textContent="…");
+  const q=[...list];
+  await Promise.all(Array.from({length:Math.min(4,q.length)},async()=>{
+    for(;;){
+      const dom=q.shift(); if(!dom)return;
+      const p=await pingSite(dom);
+      siteEls[dom].ms.textContent=p!=null?p+" ms":"✕";
+      siteEls[dom].ms.style.color=p==null?"var(--grade-poor)":p<100?"var(--grade-exc)":p<250?"var(--grade-fair)":"var(--grade-poor)";
+      if(p!=null)registerSite(dom);
+      done++;
+      if(batch)siteStatus.textContent=`pinging… ${done}/${list.length}`;
+    }
+  }));
+  siteStatus.textContent=`done — ${done} site${done===1?"":"s"} pinged · results feed the global map`;
+  [$("pingAll"),$("pingSel")].forEach(b=>b.disabled=false);
+  pingBusy=false;
+}
+$("pingAll").addEventListener("click",()=>pingSites(POP_SITES,true));
+$("pingSel").addEventListener("click",()=>pingSites(POP_SITES.filter(d=>siteEls[d].cb.checked),true));
+$("selAll").addEventListener("click",()=>POP_SITES.forEach(d=>siteEls[d].cb.checked=true));
+$("selNone").addEventListener("click",()=>POP_SITES.forEach(d=>siteEls[d].cb.checked=false));
+
+function setBoardTab(sites){
+  $("tabSrc").classList.toggle("on",!sites);
+  $("tabSites").classList.toggle("on",sites);
+  $("srcTab").style.display=sites?"none":"block";
+  $("siteTab").style.display=sites?"block":"none";
+  $("boardHint").textContent=sites?"HTTPS round-trip latency · not bandwidth":"live bar: log scale · Mbps";
+}
+$("tabSrc").addEventListener("click",()=>setBoardTab(false));
+$("tabSites").addEventListener("click",()=>setBoardTab(true));
 
 /* ================= share system ================= */
 let lastResult=null;

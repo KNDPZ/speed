@@ -37,6 +37,7 @@ function sanitize(body) {
     jit: num(body.jit, 0, 10000),
     isp: str(body.isp, 80),
     loc: str(body.loc, 80),
+    vpn: !!body.vpn,
     sources: Array.isArray(body.sources)
       ? body.sources.slice(0, 12).map((s) => ({
           n: str(s.n, 30),
@@ -75,6 +76,21 @@ export default {
     }
 
     const stub = env.SPEED_DB.get(env.SPEED_DB.idFromName("global"));
+    if (url.pathname === "/api/presence") {
+      if (request.method === "POST") {
+        let body = {}; try { body = await request.json(); } catch {}
+        const cf = request.cf || {};
+        const rec = {
+          ts: Date.now(), vpn: !!body.vpn,
+          city: str(cf.city, 60), country: str(cf.country, 3),
+          lat: num(cf.latitude, -90, 90), lon: num(cf.longitude, -180, 180),
+        };
+        if (rec.lat == null) return json({ ok: false });
+        rec.lat = +rec.lat.toFixed(2); rec.lon = +rec.lon.toFixed(2);
+        return stub.fetch("https://do/presence-post", { method: "POST", body: JSON.stringify(rec) });
+      }
+      return stub.fetch("https://do/presence-get");
+    }
     if (url.pathname === "/api/servers") {
       if (request.method === "POST") {
         let body;
@@ -99,6 +115,21 @@ export default {
     if (url.pathname === "/api/stats") {
       return stub.fetch("https://do/stats?range=" + (url.searchParams.get("range") || "24h"));
     }
+    if (url.pathname === "/api/presence") {
+      if (request.method === "POST") {
+        let body = {}; try { body = await request.json(); } catch {}
+        const cf = request.cf || {};
+        const rec = {
+          ts: Date.now(), vpn: !!body.vpn,
+          city: str(cf.city, 60), country: str(cf.country, 3),
+          lat: num(cf.latitude, -90, 90), lon: num(cf.longitude, -180, 180),
+        };
+        if (rec.lat == null) return json({ ok: false });
+        rec.lat = +rec.lat.toFixed(2); rec.lon = +rec.lon.toFixed(2);
+        return stub.fetch("https://do/presence-post", { method: "POST", body: JSON.stringify(rec) });
+      }
+      return stub.fetch("https://do/presence-get");
+    }
     if (url.pathname === "/api/servers") {
       if (request.method === "POST") {
         let body;
@@ -107,6 +138,7 @@ export default {
           name: str(s.name, 30), host: str(s.host, 60), ip: str(s.ip, 45),
           lat: num(s.lat, -90, 90), lon: num(s.lon, -180, 180),
           city: str(s.city, 60), country: str(s.country, 3), org: str(s.org, 60),
+          type: ["edge", "site", "hop"].includes(s.type) ? s.type : "edge",
         })).filter((s) => s.name && s.ip && s.lat != null && s.lon != null);
         if (!list.length) return json({ error: "no data" }, 400);
         return stub.fetch("https://do/servers-post", { method: "POST", body: JSON.stringify(list) });
@@ -134,7 +166,7 @@ export class SpeedDB {
       await this.storage.put(tkey, {
         ts: rec.ts, city: rec.city, country: rec.country,
         lat: rec.lat, lon: rec.lon, down: rec.down, up: rec.up, ping: rec.ping,
-        isp: rec.isp,
+        isp: rec.isp, vpn: rec.vpn ? 1 : 0,
       });
       if (Math.random() < 0.02) await this.prune(); // occasional cleanup of >31d stat keys
       return json({ id });
@@ -155,6 +187,20 @@ export class SpeedDB {
       const all = await this.storage.list({ prefix: "srv:", limit: 500 });
       const cutoff = Date.now() - 2592e6; // 30 days
       return json([...all.values()].filter((s) => s.ts > cutoff));
+    }
+
+    if (url.pathname === "/presence-post") {
+      const rec = JSON.parse(await request.text());
+      // one point per city per hour — presence is a footprint, not tracking
+      const slot = Math.floor(rec.ts / 36e5);
+      await this.storage.put("p:" + slot + ":" + (rec.city || rec.lat + "," + rec.lon), rec);
+      return json({ ok: true });
+    }
+
+    if (url.pathname === "/presence-get") {
+      const minSlot = Math.floor((Date.now() - 864e5) / 36e5); // last 24 h
+      const l = await this.storage.list({ prefix: "p:", limit: 1000 });
+      return json([...l.values()].filter((r) => Math.floor(r.ts / 36e5) >= minSlot));
     }
 
     if (url.pathname === "/servers-post") {
@@ -181,16 +227,18 @@ export class SpeedDB {
         const key = (rec.city || rec.lat + "," + rec.lon) + "|" + (rec.country || "");
         let a = byCity.get(key);
         if (!a) { a = { city: rec.city, country: rec.country, lat: rec.lat, lon: rec.lon,
-          down: 0, up: 0, ping: 0, upN: 0, n: 0, ispMap: {} }; byCity.set(key, a); }
+          down: 0, up: 0, ping: 0, upN: 0, n: 0, vpnN: 0, ispMap: {} }; byCity.set(key, a); }
         a.n++; a.down += rec.down || 0; a.ping += rec.ping || 0;
         if (rec.up != null) { a.up += rec.up; a.upN++; }
         if (rec.isp) { const k = String(rec.isp).slice(0, 60); a.ispMap[k] = (a.ispMap[k] || 0) + 1; }
+        if (rec.vpn) a.vpnN++;
       }
       const out = [...byCity.values()].map((a) => ({
         city: a.city, country: a.country, lat: a.lat, lon: a.lon, n: a.n,
         down: +(a.down / a.n).toFixed(1),
         up: a.upN ? +(a.up / a.upN).toFixed(1) : null,
         ping: Math.round(a.ping / a.n),
+        vpn: a.vpnN,
         isps: Object.entries(a.ispMap).sort((x, y) => y[1] - x[1]).slice(0, 6)
           .map(([name, n]) => ({ name, n })),
       }));
