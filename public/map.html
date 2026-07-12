@@ -100,7 +100,11 @@
   #siteList{overflow-y:auto;min-height:0;flex:1;margin-top:4px;scrollbar-width:thin;}
   #siteList label{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;
     color:var(--ink);padding:3px 0;cursor:pointer;border-top:1px solid var(--line-soft);}
-  #siteList input{accent-color:var(--cyan);flex:none;}
+  #siteList input.cbp{accent-color:var(--cyan);flex:none;}
+  #siteList input.cbl{accent-color:var(--magenta);flex:none;}
+  #siteList .shead{display:flex;gap:8px;font-family:var(--mono);font-size:8.5px;
+    letter-spacing:.06em;color:var(--muted);padding:2px 0;}
+  #siteList .shead span:nth-child(2){margin-left:-2px;}
   #siteList .dom{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   #siteList .ms{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;}
   #rrailToggle{position:fixed;z-index:75;right:0;top:42%;transform:translateY(-50%);
@@ -141,10 +145,10 @@
 <div id="rrail" class="hidden">
   <div class="win">
     <div class="ttl">◈ Site links — live ping targets</div>
-    <div class="row" style="justify-content:flex-start;">check a site to draw your live connection to it</div>
+    <div class="row" style="justify-content:flex-start;">PING = my live line · LOCATE = pulse all its known servers worldwide</div>
     <div id="siteList"></div>
     <div class="row" style="border-top:1px solid var(--line-soft);margin-top:6px;padding-top:6px;">
-      <span>latency = HTTPS round-trip · logged to the global map</span></div>
+      <span>servers stay on the map forever once recorded — by you or any tester worldwide</span></div>
   </div>
 </div>
 <button id="railToggle" aria-label="Show info panels" aria-expanded="true">&gt;&gt;&gt;</button>
@@ -538,8 +542,8 @@ function refreshLinks(){
     c.anim&&(on?c.anim.play():c.anim.pause());
   });
   Object.entries(siteConns).forEach(([,c])=>{
-    setDIVisible(c.di,!!c.checked);                 // site icon follows its checkbox
-    const on=linksOn&&!!c.checked;                  // its link also obeys MY LINKS
+    setDIVisible(c.di,true); // server icons are PERMANENT map records — never hidden
+    const on=linksOn&&!!c.ping; // only MY line obeys the PING checkbox + MY LINKS
     setDIVisible(c.ldi,on);setDIVisible(c.pdi,on);
     c.anim&&(on?c.anim.play():c.anim.pause());
   });
@@ -691,14 +695,18 @@ async function resolveSite(dom){
       signal:AbortSignal.timeout(6000)}).catch(()=>{});
   return out;
 }
-async function toggleSite(dom,on,msEl){
-  const existing=siteConns[dom];
-  if(existing){ existing.checked=on; refreshLinks(); return; }
-  if(!on) return;
-  msEl.textContent="…";
+function findSiteDIs(dom){
+  return serverSeries.dataItems.filter(di=>{
+    const d=di.dataContext||{};
+    return d.name===dom||d.host===dom;
+  });
+}
+async function ensureSitePoint(dom,msEl){
+  if(siteConns[dom])return siteConns[dom];
+  if(msEl)msEl.textContent="…";
   const s=await resolveSite(dom);
-  msEl.textContent=s.ping!=null?s.ping+" ms":"✕";
-  if(s.lat==null){msEl.title="couldn't geolocate this site";return;}
+  if(msEl)msEl.textContent=s.ping!=null?s.ping+" ms":"✕";
+  if(s.lat==null){if(msEl)msEl.title="couldn't geolocate this site";return null;}
   // data.push sets dataContext — pushDataItem does NOT, and a bullet factory
   // reading undefined dataContext throws inside the render loop and freezes
   // the whole chart (the "map hangs" bug)
@@ -720,14 +728,46 @@ async function toggleSite(dom,on,msEl){
   }
   siteConns[dom]=c;
   refreshLinks();
+  return c;
+}
+async function togglePing(dom,on,msEl){
+  const c=siteConns[dom]||(on?await ensureSitePoint(dom,msEl):null);
+  if(c){ c.ping=on; refreshLinks(); }
+}
+/* LOCATE: pulse EVERY known server of this URL worldwide — including edges
+   recorded by testers in other countries or behind other VPN exits */
+const locatePulses={};
+async function toggleLocate(dom,on,msEl){
+  if(!on){
+    (locatePulses[dom]||[]).forEach(p=>{p.anim.stop();p.sprite.setAll({scale:1,opacity:p.op});});
+    delete locatePulses[dom];
+    return;
+  }
+  let dis=findSiteDIs(dom);
+  if(!dis.length){ await ensureSitePoint(dom,msEl); dis=findSiteDIs(dom); }
+  locatePulses[dom]=[];
+  dis.forEach(di=>(di.bullets||[]).forEach(b=>{
+    const sprite=b.get("sprite"); if(!sprite)return;
+    sprite.setAll({centerX:am5.p50,centerY:am5.p50});
+    const anim=sprite.animate({key:"scale",from:1,to:1.7,duration:650,
+      loops:Infinity,easing:am5.ease.yoyo(am5.ease.cubic)});
+    locatePulses[dom].push({anim,sprite,op:sprite.get("opacity",1)});
+  }));
 }
 function buildSiteList(){
   const list=$("siteList");list.innerHTML="";
+  const head=document.createElement("div");
+  head.className="shead";
+  head.innerHTML=`<span title="draw my live connection">PING</span><span title="pulse every known server of this site, worldwide">LOCATE</span><span></span>`;
+  list.appendChild(head);
   SITES.forEach(dom=>{
     const l=document.createElement("label");
-    l.innerHTML=`<input type="checkbox"><span class="dom">${dom}</span><span class="ms">—</span>`;
+    l.innerHTML=`<input type="checkbox" class="cbp" title="ping — draw my live connection">
+      <input type="checkbox" class="cbl" title="locate — heartbeat every known server of ${dom}">
+      <span class="dom">${dom}</span><span class="ms">—</span>`;
     const ms=l.querySelector(".ms");
-    l.querySelector("input").addEventListener("change",e=>toggleSite(dom,e.target.checked,ms));
+    l.querySelector(".cbp").addEventListener("change",e=>togglePing(dom,e.target.checked,ms));
+    l.querySelector(".cbl").addEventListener("change",e=>toggleLocate(dom,e.target.checked,ms));
     list.appendChild(l);
   });
 }
