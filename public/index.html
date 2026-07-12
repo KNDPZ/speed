@@ -354,7 +354,6 @@ Also create /ads.txt in the repo root: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT,
       <div class="tabs" role="tablist">
         <button id="tabSrc" class="on">SOURCES</button>
         <button id="tabSites">POPULAR SITES</button>
-        <button id="tabCustom">CUSTOM</button>
       </div>
       <span id="boardHint">live bar: log scale · Mbps</span>
     </div>
@@ -367,15 +366,6 @@ Also create /ads.txt in the repo root: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT,
         <span class="st" id="siteStatus">latency to the world's most-visited sites — check any, or ping everything</span>
       </div>
       <div id="siteRows"></div>
-    </div>
-    <div id="customTab" style="display:none;">
-      <div class="site-controls">
-        <input id="custHost" placeholder="example.com or 1.2.3.4" autocomplete="off"
-          style="flex:1;min-width:200px;font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:8px 10px;">
-        <button id="custPing">PING</button>
-        <span class="st" id="custStatus">enter any URL or IP and measure your latency to it</span>
-      </div>
-      <div id="custRows"></div>
     </div>
     <div id="srcTab">
     <div class="cols">
@@ -867,9 +857,6 @@ async function runTest(){
   shareBtn.disabled=!downs.length;
   shareBtn.title=downs.length?"Copy your shareable link":"Run a test first";
   await submitStat(result);          // registers the test + servers on the map
-  try{ window.__cbLogTargets=(window.__cbLogTargets||[]).concat(
-    result.sources.filter(s=>s.ping!=null).map(s=>({host:s.n,ip:null,ping:s.ping,kind:"server"})));
-    window.__cbLog&&window.__cbLog(); }catch{}
   if(downs.length) makeShareLink(true); // share link appears automatically
   phaseEl.textContent=downs.length
     ? `Done — ${downs.length} of ${SOURCES.length} sources measured. Cross-check below ↓`
@@ -1005,89 +992,6 @@ applyTheme("dark");
 detectIdentity();
 resolveServerIPs();
 drawSpark();
-
-/* ===== CUSTOM ping tab ===== */
-(function(){
-  const tabCustom=document.getElementById("tabCustom");
-  if(!tabCustom)return;
-  const custTab=document.getElementById("customTab"),
-        srcTab=document.getElementById("srcTab"),
-        siteTab=document.getElementById("siteTab"),
-        tabSrc=document.getElementById("tabSrc"),
-        tabSites=document.getElementById("tabSites"),
-        rows=document.getElementById("custRows"),
-        input=document.getElementById("custHost"),
-        pingBtn=document.getElementById("custPing"),
-        status=document.getElementById("custStatus");
-  const hint=document.getElementById("boardHint");
-  function showTab(which){
-    [tabSrc,tabSites,tabCustom].forEach(b=>b&&b.classList.remove("on"));
-    srcTab.style.display="none";if(siteTab)siteTab.style.display="none";custTab.style.display="none";
-    if(which==="src"){tabSrc.classList.add("on");srcTab.style.display="";if(hint)hint.style.display="";}
-    else if(which==="sites"){tabSites.classList.add("on");siteTab.style.display="";if(hint)hint.style.display="none";}
-    else{tabCustom.classList.add("on");custTab.style.display="";if(hint)hint.style.display="none";}
-  }
-  tabSrc&&tabSrc.addEventListener("click",()=>showTab("src"));
-  tabSites&&tabSites.addEventListener("click",()=>showTab("sites"));
-  tabCustom.addEventListener("click",()=>showTab("custom"));
-  const fmtc=(n,d=1)=>n==null?"—":(n>=100?Math.round(n):(+n).toFixed(d));
-  const normHost=v=>v.trim().replace(/^https?:\/\//i,"").replace(/\/.*$/,"").replace(/:\d+$/,"");
-  async function pingCustom(host){
-    const isIP=/^\d{1,3}(\.\d{1,3}){3}$/.test(host);
-    const t=[];
-    for(let i=0;i<3;i++){
-      const t0=performance.now();
-      try{
-        await fetch((isIP?"http://":"https://")+host+"/?cb="+Math.random(),
-          {mode:"no-cors",cache:"no-store",signal:AbortSignal.timeout(6000)});
-        t.push(performance.now()-t0);
-      }catch{}
-    }
-    return t.length?Math.round(Math.min(...t)):null;
-  }
-  async function resolveIP(host){
-    try{const d=await fetch("https://dns.google/resolve?name="+host+"&type=A",{cache:"no-store"}).then(r=>r.json());
-      return ((d.Answer||[]).find(x=>x.type===1)||{}).data||null;}catch{return null;}
-  }
-  async function go(){
-    const host=normHost(input.value);if(!host)return;
-    pingBtn.disabled=true;pingBtn.textContent="…";status.textContent="pinging "+host+"…";
-    const isIP=/^\d{1,3}(\.\d{1,3}){3}$/.test(host);
-    const [ping,ip]=await Promise.all([pingCustom(host),isIP?Promise.resolve(host):resolveIP(host)]);
-    const row=document.createElement("div");row.className="lane";
-    row.innerHTML=`<div class="src"><div class="name"><span class="dot" style="background:var(--lime)"></span>${host}</div>`
-      +`<div class="host">${ip||"custom target"}</div></div>`
-      +`<div class="ip">${ip||"—"}</div>`
-      +`<div class="num">${ping!=null?fmtc(ping,0)+'<small>ms</small>':'✕'}</div>`
-      +`<div class="num na">—</div><div class="num na">—</div><div class="track"></div>`;
-    rows.prepend(row);
-    status.textContent=ping!=null?host+": "+ping+" ms":host+": unreachable (host may block requests)";
-    pingBtn.disabled=false;pingBtn.textContent="PING";input.value="";
-    if(window.__cbLogTargets)window.__cbLogTargets.push({host,ip,ping,kind:"custom"});
-  }
-  pingBtn.addEventListener("click",go);
-  input.addEventListener("keydown",e=>{if(e.key==="Enter")go();});
-})();
-
-/* ===== session logging (feeds hidden access.html) ===== */
-window.__cbLogTargets=[];
-(function(){
-  function did(){try{let d=localStorage.getItem("cb_did");
-    if(!d){d=(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random()).replace(/-/g,"").slice(0,16);
-      localStorage.setItem("cb_did",d);}return d;}catch{return "nostore";}}
-  function hint(){const ua=navigator.userAgent,p=navigator.platform||"";
-    let os=/Windows/.test(ua)?"Windows":/Android/.test(ua)?"Android":/iPhone|iPad/.test(ua)?"iOS":/Mac/.test(ua)?"macOS":/Linux/.test(ua)?"Linux":"Unknown";
-    let br=/Edg\//.test(ua)?"Edge":/Brave/.test(ua)?"Brave":/OPR\//.test(ua)?"Opera":/Chrome/.test(ua)?"Chrome":/Firefox/.test(ua)?"Firefox":/Safari/.test(ua)?"Safari":"browser";
-    return os+" · "+br+(p?" · "+p:"");}
-  window.__cbLog=function(){
-    try{fetch("/api/log",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({did:did(),device:hint(),page:"speedtest",
-        targets:(window.__cbLogTargets||[]).slice(-40)})}).catch(()=>{});}catch{}
-  };
-  // log once shortly after load, and again after a test completes
-  setTimeout(window.__cbLog,4000);
-})();
-
 })();
 </script>
 </body>

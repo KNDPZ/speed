@@ -71,29 +71,3 @@ No ad units in the markup — Google places ads automatically:
 Keyword copy, FAQ section, and JSON-LD schema are already in index.html.
 After launch: add an og:image screenshot and submit the site to Google Search
 Console and Bing Webmaster Tools.
-
-## Hidden access log (access.html)
-
-`public/access.html` is an ops-only dashboard of test sessions: time, IP,
-location, ISP/ASN, device + user-agent, a per-device ID, which page, and every
-target pinged (servers, sites, custom). It flags devices seen from more than one
-IP/city (VPN switching or travel) and exports CSV.
-
-It is **not linked** from index.html or map.html and carries `noindex,nofollow`.
-Discovery is by URL only — but that is *obscurity, not security*. The real lock
-is a secret key: the `GET /api/log` endpoint returns data only when
-`?key=` matches the worker secret. Set it once:
-
-```bash
-npx wrangler secret put ACCESS_KEY
-# enter a long random string; use it to log in at speed.playy.online/access.html
-```
-
-Without ACCESS_KEY set, the log endpoint returns 401 to everyone (fail-closed).
-Client IPs live only in this log; they are never returned by /api/stats,
-/api/servers, /api/origins, or shown on the public map.
-
-**Consent note:** you are recording visitor IPs, approximate location, ISP, and
-device. Depending on your audience's jurisdiction (GDPR, etc.) you likely need a
-privacy policy disclosing this and a lawful basis. That's a policy decision for
-you — the mechanism is here; the disclosure is your call.
