@@ -11,6 +11,8 @@
  *   GET  /api/servers        every edge ever recorded (they persist)
  *   POST /api/origins        count an anonymous ping origin (city-level, no IP)
  *   GET  /api/origins        all origins with counts
+ *   POST /api/log            record a test session (device, IP, ISP, targets)
+ *   GET  /api/log?key=…      hidden ops log (requires ACCESS_KEY secret)
  * Privacy: client IP is never stored. Geo (city/lat/lon) comes from
  * Cloudflare's edge metadata, rounded to ~city precision.
  */
@@ -94,6 +96,32 @@ export default {
       }
       return stub.fetch("https://do/presence-get");
     }
+    if (url.pathname === "/api/log") {
+      if (request.method === "POST") {
+        let b; try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+        const cf = request.cf || {};
+        const rec = {
+          ts: Date.now(),
+          did: str(b.did, 40),                 // client-generated device id (localStorage)
+          ip: request.headers.get("cf-connecting-ip") || "",
+          city: str(cf.city, 60), region: str(cf.region, 60), country: str(cf.country, 3),
+          lat: num(cf.latitude, -90, 90), lon: num(cf.longitude, -180, 180),
+          isp: str(cf.asOrganization, 80), asn: cf.asn ? String(cf.asn).slice(0, 12) : "",
+          ua: (request.headers.get("user-agent") || "").slice(0, 300),
+          device: str(b.device, 120),          // client-parsed platform hint
+          targets: Array.isArray(b.targets) ? b.targets.slice(0, 40).map((t) => ({
+            host: str(t.host, 60), ip: str(t.ip, 45), ping: num(t.ping, 0, 20000),
+            kind: str(t.kind, 12),
+          })) : [],
+          page: str(b.page, 20),
+        };
+        return stubOf(env).fetch("https://do/log", { method: "POST", body: JSON.stringify(rec) });
+      }
+      // GET requires the secret key (set via: wrangler secret put ACCESS_KEY)
+      const key = url.searchParams.get("key") || "";
+      if (!env.ACCESS_KEY || key !== env.ACCESS_KEY) return json({ error: "unauthorized" }, 401);
+      return stubOf(env).fetch("https://do/log?limit=" + (url.searchParams.get("limit") || "500"));
+    }
     if (url.pathname === "/api/origins") {
       if (request.method === "POST") {
         let b; try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
@@ -142,6 +170,32 @@ export default {
         return stub.fetch("https://do/presence-post", { method: "POST", body: JSON.stringify(rec) });
       }
       return stub.fetch("https://do/presence-get");
+    }
+    if (url.pathname === "/api/log") {
+      if (request.method === "POST") {
+        let b; try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+        const cf = request.cf || {};
+        const rec = {
+          ts: Date.now(),
+          did: str(b.did, 40),                 // client-generated device id (localStorage)
+          ip: request.headers.get("cf-connecting-ip") || "",
+          city: str(cf.city, 60), region: str(cf.region, 60), country: str(cf.country, 3),
+          lat: num(cf.latitude, -90, 90), lon: num(cf.longitude, -180, 180),
+          isp: str(cf.asOrganization, 80), asn: cf.asn ? String(cf.asn).slice(0, 12) : "",
+          ua: (request.headers.get("user-agent") || "").slice(0, 300),
+          device: str(b.device, 120),          // client-parsed platform hint
+          targets: Array.isArray(b.targets) ? b.targets.slice(0, 40).map((t) => ({
+            host: str(t.host, 60), ip: str(t.ip, 45), ping: num(t.ping, 0, 20000),
+            kind: str(t.kind, 12),
+          })) : [],
+          page: str(b.page, 20),
+        };
+        return stubOf(env).fetch("https://do/log", { method: "POST", body: JSON.stringify(rec) });
+      }
+      // GET requires the secret key (set via: wrangler secret put ACCESS_KEY)
+      const key = url.searchParams.get("key") || "";
+      if (!env.ACCESS_KEY || key !== env.ACCESS_KEY) return json({ error: "unauthorized" }, 401);
+      return stubOf(env).fetch("https://do/log?limit=" + (url.searchParams.get("limit") || "500"));
     }
     if (url.pathname === "/api/origins") {
       if (request.method === "POST") {
@@ -198,6 +252,41 @@ export class SpeedDB {
     if (url.pathname === "/get") {
       const rec = await this.storage.get("r:" + (url.searchParams.get("id") || ""));
       return rec ? json(rec) : json({ error: "not found" }, 404);
+    }
+
+    if (url.pathname === "/log") {
+      if (request.method === "POST") {
+        const rec = JSON.parse(await request.text());
+        const id = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+        const key = "log:" + String(Date.now()).padStart(14, "0") + ":" + id;
+        await this.storage.put(key, rec);
+        // maintain a per-device index of the locations/IPs it has tested from
+        if (rec.did) {
+          const dk = "dev:" + rec.did;
+          const dev = (await this.storage.get(dk)) || { did: rec.did, seen: [], count: 0, first: rec.ts };
+          dev.count++; dev.last = rec.ts;
+          const sig = (rec.ip || "") + "|" + (rec.city || "");
+          if (!dev.seen.some((s) => s.sig === sig))
+            dev.seen.push({ sig, ip: rec.ip, city: rec.city, country: rec.country,
+              isp: rec.isp, ts: rec.ts });
+          dev.seen = dev.seen.slice(-50);
+          await this.storage.put(dk, dev);
+          rec.deviceLocations = dev.seen.length;
+        }
+        return json({ ok: true });
+      }
+      const lim = +(new URL(request.url).searchParams.get("limit") || 500);
+      const rows = await this.storage.list({ prefix: "log:", reverse: true, limit: lim });
+      const logs = [...rows.values()];
+      // attach cross-location count per device
+      const devKeys = [...new Set(logs.map((l) => l.did).filter(Boolean))].map((d) => "dev:" + d);
+      const devs = devKeys.length ? await this.storage.get(devKeys) : new Map();
+      logs.forEach((l) => {
+        const d = devs.get && devs.get("dev:" + l.did);
+        l.deviceLocations = d ? d.seen.length : 1;
+        l.deviceTests = d ? d.count : 1;
+      });
+      return json(logs);
     }
 
     if (url.pathname === "/origins") {

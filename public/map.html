@@ -106,8 +106,18 @@
     background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);
     padding:6px 4px;cursor:pointer;}
   .ddtabs button.on{background:rgba(56,224,199,.14);color:var(--cyan);}
+  .clitem:hover{background:rgba(56,224,199,.06);border-radius:5px;}
   .ddnote{font-family:var(--mono);font-size:9.5px;color:var(--muted);line-height:1.6;
     padding:2px 2px 8px;border-bottom:1px solid var(--line-soft);margin-bottom:6px;}
+  .ddbar{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .ddbar #pingAll{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--cyan);
+    background:rgba(56,224,199,.12);border:1px solid var(--line);border-radius:6px;padding:6px;cursor:pointer;}
+  .ddbar .allchk{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--muted);cursor:pointer;}
+  .custombox{display:flex;gap:6px;margin-bottom:8px;}
+  .custombox input{flex:1;min-width:0;font-family:var(--mono);font-size:11px;color:var(--ink);
+    background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:7px 9px;}
+  .custombox #custPing{font-family:var(--mono);font-size:10px;color:var(--cyan);
+    background:rgba(56,224,199,.12);border:1px solid var(--line);border-radius:6px;padding:0 12px;cursor:pointer;}
   #loadmsg{position:fixed;z-index:55;inset:0;display:flex;align-items:center;justify-content:center;
     font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:.2em;text-transform:uppercase;}
   @media(max-width:680px){ .sub{display:none;} #rail{width:250px;} #railToggle{display:block;} }
@@ -303,7 +313,7 @@ function showPanel(item,isServer){
   }
   panel.style.display="block";
   if(!railOpen)setRail(true); // detail panels live in the rail — reveal it
-  if(item.lat!=null&&item.lon!=null)showCluster(item.lat,item.lon);
+  if(item.lat!=null&&item.lon!=null&&!item._fromCluster)showCluster(item.lat,item.lon);
 }
 
 /* ============ chart (amCharts 5 — animated lines, like the amcharts demo) ============ */
@@ -453,6 +463,34 @@ function setGlobePoints(){
   pointSeries.data.setAll(points.map(p=>({geometry:{type:"Point",coordinates:[p.lon,p.lat]},...p})));
 }
 
+/* ============ session logging (feeds the hidden access.html) ============ */
+function deviceId(){
+  try{let d=localStorage.getItem("cb_did");
+    if(!d){d=(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random()).replace(/-/g,"").slice(0,16);
+      localStorage.setItem("cb_did",d);}
+    return d;}catch{return "nostore";}
+}
+function deviceHint(){
+  const ua=navigator.userAgent,p=navigator.platform||"";
+  let os="Unknown";
+  if(/Windows/.test(ua))os="Windows";else if(/Android/.test(ua))os="Android";
+  else if(/iPhone|iPad|iPod/.test(ua))os="iOS";else if(/Mac/.test(ua))os="macOS";
+  else if(/Linux/.test(ua))os="Linux";
+  let br="browser";
+  if(/Edg\//.test(ua))br="Edge";else if(/Brave/.test(ua))br="Brave";
+  else if(/OPR\//.test(ua))br="Opera";else if(/Chrome/.test(ua))br="Chrome";
+  else if(/Firefox/.test(ua))br="Firefox";else if(/Safari/.test(ua))br="Safari";
+  return `${os} · ${br}${p?" · "+p:""}`;
+}
+function logSession(page){
+  try{
+    fetch("/api/log",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({did:deviceId(),device:deviceHint(),page,
+        targets:myEdges.map(e=>({host:e.host,ip:e.ip,ping:e.ping,
+          kind:String(e.svc).startsWith("site:")?"site":String(e.svc).startsWith("cust:")?"custom":"server"}))
+      })}).catch(()=>{});
+  }catch{}
+}
 /* ============ your live connections + global edge registry ============ */
 let userLoc=null,myEdges=[],edges=[];
 const conns={},svcItems={},svcChecked={};
@@ -522,7 +560,7 @@ async function pingSite(svc,btn){
   if(btn){btn.disabled=true;btn.textContent="…";}
   const e=await loadEdge(svc);
   if(e){
-    e.ping=await pingSiteMs(svc.host);
+    if(svc.site!==false)e.ping=await pingSiteMs(svc.host);
     const k=e.host+"|"+e.ip;
     myEdges=myEdges.filter(x=>x.host+"|"+x.ip!==k);myEdges.push(e);
     edges=edges.filter(x=>x.host+"|"+x.ip!==k);edges.push(e);
@@ -630,10 +668,18 @@ function showCluster(lat,lon){
   const place=items.map(i=>i.e?.city||i.o?.city||i.p?.city).find(Boolean)||"this location";
   $("clTitle").textContent=`AT ${String(place).toUpperCase()} (${items.length} instances)`;
   items.forEach(i=>{
-    const d=document.createElement("div");d.className="row lrow";
-    if(i.t==="edge")d.innerHTML=`<span class="dia" style="background:${hexCss(i.e.hex||0xFF3FA4)};color:${hexCss(i.e.hex||0xFF3FA4)}"></span><span>${i.e.name}<span style="color:var(--muted)"> · ${i.e.ip||i.e.host}</span></span>`;
-    else if(i.t==="origin")d.innerHTML=`<span class="dot" style="background:var(--cyan);color:var(--cyan)"></span><span>${i.o.n} tester${i.o.n===1?"":"s"} pinged from here${i.o.n>1?" (VPN exits land here too)":""}</span>`;
-    else d.innerHTML=`<span class="dot" style="background:${speedColor(i.p.down)};color:${speedColor(i.p.down)}"></span><span>${i.p.n||1} speed test${(i.p.n||1)===1?"":"s"} · avg ${fmt(i.p.down)} Mbps</span>`;
+    const d=document.createElement("div");d.className="row lrow clitem";
+    if(i.t==="edge"){
+      d.innerHTML=`<span class="dia" style="background:${hexCss(i.e.hex||0xFF3FA4)};color:${hexCss(i.e.hex||0xFF3FA4)}"></span><span>${i.e.name}<span style="color:var(--muted)"> · ${i.e.ip||i.e.host}</span></span>`;
+      d.style.cursor="pointer";
+      d.addEventListener("click",()=>showPanel({...i.e,_fromCluster:1},true)); // swap the info panel above
+    }else if(i.t==="origin"){
+      d.innerHTML=`<span class="dot" style="background:var(--cyan);color:var(--cyan)"></span><span>${i.o.n} tester${i.o.n===1?"":"s"} pinged from here${i.o.n>1?" (VPN exits land here too)":""}</span>`;
+    }else{
+      d.innerHTML=`<span class="dot" style="background:${speedColor(i.p.down)};color:${speedColor(i.p.down)}"></span><span>${i.p.n||1} speed test${(i.p.n||1)===1?"":"s"} · avg ${fmt(i.p.down)} Mbps</span>`;
+      d.style.cursor="pointer";
+      d.addEventListener("click",()=>showPanel({...i.p,_fromCluster:1},false));
+    }
     rows.appendChild(d);
   });
   win.style.display="block";
@@ -670,6 +716,43 @@ function applyService(key,on){
   refreshLinks();
 }
 let ddTab="servers";
+const customTargets=[]; // {key,name,host,hex,ping,site,custom}
+function normHost(v){
+  v=v.trim().replace(/^https?:\/\//i,"").replace(/\/.*$/,"").replace(/:\d+$/,"");
+  return v;
+}
+function buildCustomTab(list){
+  const note=document.createElement("div");note.className="ddnote";
+  note.textContent="Enter any URL or IP and ping it. Its edge is geolocated and pinned on the map like any other — and shared with every tester once recorded.";
+  list.appendChild(note);
+  const box=document.createElement("div");box.className="custombox";
+  box.innerHTML=`<input id="custIn" placeholder="example.com or 1.2.3.4" autocomplete="off">
+    <button id="custPing">PING</button>`;
+  list.appendChild(box);
+  const go=async()=>{
+    const raw=box.querySelector("#custIn").value;const host=normHost(raw);
+    if(!host)return;
+    const btn=box.querySelector("#custPing");
+    let svc=customTargets.find(c=>c.host===host);
+    if(!svc){
+      const isIP=/^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+      svc={key:"cust:"+host,name:host,host,hex:0x9AE66E,site:!isIP,custom:true,
+        ping:isIP?null:(()=> "https://"+host+"/?cb="+Math.random())};
+      customTargets.push(svc);svcChecked[svc.key]=true;svcByHost[host]=svc;
+    }
+    const e=await pingSite(svc,btn);
+    if(e)box.querySelector("#custIn").value="";
+    buildServerDropdown();
+  };
+  box.querySelector("#custPing").addEventListener("click",ev=>{ev.stopPropagation();go();});
+  box.querySelector("#custIn").addEventListener("keydown",ev=>{if(ev.key==="Enter"){ev.stopPropagation();go();}});
+  box.querySelector("#custIn").addEventListener("click",ev=>ev.stopPropagation());
+  if(customTargets.length){
+    const hd=document.createElement("div");hd.className="ddnote";hd.style.borderTop="1px solid var(--line-soft)";
+    hd.style.paddingTop="8px";hd.textContent="Your custom targets:";list.appendChild(hd);
+    customTargets.forEach(s=>list.appendChild(ddRow(s)));
+  }
+}
 function ddRow(s){
   const n=(svcItems[s.key]||[]).length;
   const row=document.createElement("div");row.className="ddrow";
@@ -690,7 +773,7 @@ function ddRow(s){
 function buildServerDropdown(){
   const list=$("srvList");list.innerHTML="";
   const tabs=document.createElement("div");tabs.className="ddtabs";
-  [["servers","SERVERS"],["sites","SITE LINKS"]].forEach(([k,t])=>{
+  [["servers","SERVERS"],["sites","SITE LINKS"],["custom","CUSTOM"]].forEach(([k,t])=>{
     const b=document.createElement("button");
     b.textContent=t;b.classList.toggle("on",ddTab===k);
     b.addEventListener("click",e=>{e.stopPropagation();ddTab=k;buildServerDropdown();});
@@ -699,12 +782,26 @@ function buildServerDropdown(){
   list.appendChild(tabs);
   if(ddTab==="servers"){
     SERVICES.concat(svcItems.other?[OTHER]:[]).forEach(s=>list.appendChild(ddRow(s)));
-  }else{
+  }else if(ddTab==="sites"){
+    const bar=document.createElement("div");bar.className="ddbar";
+    bar.innerHTML=`<button id="pingAll">⚡ PING ALL</button>
+      <label class="allchk"><input type="checkbox" id="chkAll"> all</label>`;
+    list.appendChild(bar);
     const note=document.createElement("div");note.className="ddnote";
     note.textContent="PING measures your live latency and pins the site's edge — it stays on the map for every tester once recorded.";
     list.appendChild(note);
     SITESVCS.forEach(s=>list.appendChild(ddRow(s)));
-  }
+    const allOn=SITESVCS.every(s=>svcChecked[s.key]!==false);
+    const cb=list.querySelector("#chkAll");cb.checked=allOn;
+    cb.addEventListener("change",e=>{e.stopPropagation();
+      SITESVCS.forEach(s=>applyService(s.key,e.target.checked));buildServerDropdown();});
+    list.querySelector("#pingAll").addEventListener("click",async e=>{
+      e.stopPropagation();const btn=e.target;btn.disabled=true;btn.textContent="PINGING…";
+      for(const s of SITESVCS){const row=[...list.querySelectorAll(".ddrow")]
+        .find(r=>r.querySelector("label")?.textContent.trim().startsWith(s.name));
+        await pingSite(s,row?.querySelector(".pingbtn"));}
+      btn.disabled=false;btn.textContent="⚡ PING ALL";});
+  }else{ buildCustomTab(list); }
 }
 $("srvDD").addEventListener("click",e=>{
   if(e.target.closest("#srvList"))return; // clicks inside the panel don't close it
@@ -957,6 +1054,7 @@ async function logAndLoadPresence(){
   await loadOrigins();          // anonymous "pinged from here" markers
   buildLocIndex();
   buildServerDropdown();
+  logSession("map");
   buildSiteList();
   logAndLoadPresence();
   refreshLinks();

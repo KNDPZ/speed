@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Access Log</title>
+<meta name="robots" content="noindex,nofollow,noarchive">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#04070F;--panel:#0A1220;--panel2:#0D1626;--ink:#D9F3EF;--muted:#5E7C8C;
+    --cyan:#38E0C7;--magenta:#FF3FA4;--amber:#F0C04B;--line:rgba(56,224,199,.2);
+    --mono:'IBM Plex Mono',monospace;--disp:'Space Grotesk',sans-serif;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--disp);min-height:100vh;padding:24px 18px 60px;}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.4;
+    background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.12) 3px 4px);}
+  .wrap{max-width:1200px;margin:0 auto;position:relative;z-index:1;}
+  h1{font-size:20px;letter-spacing:-.01em;}h1 .t{color:var(--magenta);}
+  .sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin:4px 0 20px;letter-spacing:.08em;}
+  #gate{max-width:380px;margin:18vh auto 0;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:26px;text-align:center;}
+  #gate input{width:100%;font-family:var(--mono);font-size:13px;color:var(--ink);background:var(--panel2);
+    border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin:14px 0;}
+  #gate button{width:100%;font-family:var(--disp);font-weight:600;font-size:14px;color:#04121A;
+    background:var(--magenta);border:none;border-radius:999px;padding:11px;cursor:pointer;}
+  #gate .err{color:var(--magenta);font-family:var(--mono);font-size:11px;min-height:14px;margin-top:8px;}
+  #app{display:none;}
+  .bar{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:16px;}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 14px;}
+  .stat .l{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+  .stat .v{font-family:var(--mono);font-size:18px;font-weight:600;margin-top:3px;}
+  .bar input{flex:1;min-width:180px;font-family:var(--mono);font-size:12px;color:var(--ink);
+    background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 12px;}
+  .bar button{font-family:var(--mono);font-size:11px;color:var(--cyan);background:var(--panel);
+    border:1px solid var(--line);border-radius:8px;padding:9px 14px;cursor:pointer;}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;overflow:hidden;font-size:12px;}
+  th,td{padding:9px 11px;text-align:left;vertical-align:top;font-family:var(--mono);}
+  th{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+    border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel2);}
+  tr+tr td{border-top:1px solid rgba(56,224,199,.08);}
+  td .ip{color:var(--cyan);}td .isp{color:var(--muted);}
+  .flag{color:var(--magenta);font-weight:600;}
+  .tgt{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+    padding:1px 6px;margin:1px 2px 1px 0;font-size:10px;}
+  .tgt.site{border-color:rgba(88,183,232,.4);}.tgt.custom{border-color:rgba(180,201,74,.5);}
+  .device{color:var(--amber);}
+  .foot{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:16px;line-height:1.6;}
+  .empty{padding:40px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="gate">
+    <h1>◆ Access<span class="t">_</span></h1>
+    <div class="sub" style="margin:6px 0 0;">restricted — key required</div>
+    <input id="key" type="password" placeholder="access key" autocomplete="off">
+    <button id="enter">Enter</button>
+    <div class="err" id="gateErr"></div>
+  </div>
+
+  <div id="app">
+    <h1>Access log<span class="t">_</span> <span style="font-size:12px;color:var(--muted);font-weight:400;">Crossbench ops</span></h1>
+    <div class="sub">test sessions · device fingerprints · targets pinged · cross-location detection</div>
+    <div class="bar">
+      <div class="stat"><div class="l">Sessions</div><div class="v" id="sCount">—</div></div>
+      <div class="stat"><div class="l">Unique devices</div><div class="v" id="sDev">—</div></div>
+      <div class="stat"><div class="l">Unique IPs</div><div class="v" id="sIp">—</div></div>
+      <div class="stat"><div class="l">Multi-location devices</div><div class="v" id="sMulti">—</div></div>
+      <input id="filter" placeholder="filter by IP, city, ISP, device, target…">
+      <button id="refresh">↻ Refresh</button>
+      <button id="csv">⭳ CSV</button>
+    </div>
+    <div id="tableWrap"></div>
+    <div class="foot">
+      Times are your local timezone. "Multi-loc" flags a device ID seen from more than one IP/city —
+      typically VPN switching or travel. IPs are shown here only; they are never exposed on the public
+      map or speed test. This page is noindex and key-gated.
+    </div>
+  </div>
+</div>
+
+<script>
+(()=>{
+"use strict";
+const $=id=>document.getElementById(id);
+let KEY="",rows=[];
+const fmtTime=ts=>new Date(ts).toLocaleString();
+
+async function load(){
+  try{
+    const r=await fetch("/api/log?key="+encodeURIComponent(KEY)+"&limit=1000");
+    if(r.status===401){gateErr("wrong key");return false;}
+    if(!r.ok)throw 0;
+    rows=await r.json();
+    render();
+    return true;
+  }catch{gateErr("could not load");return false;}
+}
+function gateErr(m){const e=$("gateErr");if(e)e.textContent=m;}
+
+function render(){
+  const f=($("filter").value||"").toLowerCase();
+  const view=rows.filter(r=>!f||JSON.stringify(r).toLowerCase().includes(f));
+  const devs=new Set(rows.map(r=>r.did)),ips=new Set(rows.map(r=>r.ip));
+  const multi=new Set(rows.filter(r=>(r.deviceLocations||1)>1).map(r=>r.did));
+  $("sCount").textContent=rows.length;
+  $("sDev").textContent=devs.size;
+  $("sIp").textContent=ips.size;
+  $("sMulti").textContent=multi.size;
+
+  if(!view.length){$("tableWrap").innerHTML='<div class="empty">no sessions'+(f?" match this filter":" yet")+'</div>';return;}
+  const rowsHtml=view.map(r=>{
+    const loc=[r.city,r.region,r.country].filter(Boolean).join(", ")||"—";
+    const tgts=(r.targets||[]).map(t=>`<span class="tgt ${t.kind||''}">${t.host||t.ip||"?"}${t.ping!=null?" "+Math.round(t.ping)+"ms":""}</span>`).join("")||'<span class="isp">—</span>';
+    const multi=(r.deviceLocations||1)>1?`<span class="flag">⚠ ${r.deviceLocations} locs</span>`:"";
+    return `<tr>
+      <td>${fmtTime(r.ts)}</td>
+      <td><span class="ip">${r.ip||"—"}</span></td>
+      <td>${loc}<br><span class="isp">${r.isp||""}${r.asn?" · AS"+r.asn:""}</span></td>
+      <td><span class="device">${r.device||"—"}</span><br><span class="isp" title="${(r.ua||'').replace(/"/g,'')}">${(r.ua||"").slice(0,42)}${(r.ua||"").length>42?"…":""}</span></td>
+      <td><code style="font-size:10px;color:var(--muted)">${(r.did||"").slice(0,10)}</code> ${multi}<br><span class="isp">${r.deviceTests||1} tests</span></td>
+      <td>${r.page||"—"}</td>
+      <td>${tgts}</td>
+    </tr>`;
+  }).join("");
+  $("tableWrap").innerHTML=`<div style="max-height:66vh;overflow:auto;border-radius:10px;">
+    <table><thead><tr>
+      <th>Time</th><th>IP</th><th>Location / ISP</th><th>Device / UA</th>
+      <th>Device ID</th><th>Page</th><th>Targets pinged</th>
+    </tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+}
+
+function toCSV(){
+  const head=["ts","ip","city","region","country","isp","asn","device","ua","did","deviceLocations","deviceTests","page","targets"];
+  const esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+  const lines=[head.join(",")].concat(rows.map(r=>head.map(k=>
+    k==="ts"?esc(fmtTime(r.ts)):
+    k==="targets"?esc((r.targets||[]).map(t=>`${t.host||t.ip}${t.ping!=null?"@"+Math.round(t.ping)+"ms":""}`).join(" | ")):
+    esc(r[k])).join(",")));
+  const blob=new Blob([lines.join("\n")],{type:"text/csv"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="crossbench-access-log.csv";a.click();
+}
+
+$("enter").addEventListener("click",async()=>{
+  KEY=$("key").value.trim();if(!KEY)return;
+  if(await load()){$("gate").style.display="none";$("app").style.display="block";
+    try{sessionStorage.setItem("cb_ak",KEY);}catch{}}
+});
+$("key").addEventListener("keydown",e=>{if(e.key==="Enter")$("enter").click();});
+$("filter").addEventListener("input",render);
+$("refresh").addEventListener("click",load);
+$("csv").addEventListener("click",toCSV);
+
+// auto-resume within the tab session only
+try{const k=sessionStorage.getItem("cb_ak");
+  if(k){KEY=k;load().then(ok=>{if(ok){$("gate").style.display="none";$("app").style.display="block";}});}
+}catch{}
+})();
+</script>
+</body>
+</html>
