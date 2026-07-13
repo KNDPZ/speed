@@ -164,7 +164,10 @@ export default {
                   : [];
         const list = raw.slice(0, 20).map(sanitizeServer).filter(Boolean);
         if (!list.length) return json({ error: "no data" }, 400);
-        return stub.fetch("https://do/servers", { method: "POST", body: JSON.stringify(list) });
+        const g = edgeGeo(); // who reported this edge — city-level only, no IP
+        const reporter = [g.city, g.country].filter(Boolean).join(", ") || null;
+        return stub.fetch("https://do/servers", { method: "POST",
+          body: JSON.stringify({ list, reporter }) });
       }
       return stub.fetch("https://do/servers");
     }
@@ -262,9 +265,19 @@ export class SpeedDB {
 
     if (url.pathname === "/servers") {
       if (request.method === "POST") {
-        const list = JSON.parse(await request.text());
-        for (const s of list)
-          await this.storage.put("srv:" + s.host + "|" + s.ip, { ...s, ts: Date.now() });
+        const body = JSON.parse(await request.text());
+        const list = Array.isArray(body) ? body : body.list || []; // both wire shapes
+        const reporter = Array.isArray(body) ? null : body.reporter || null;
+        for (const s of list) {
+          const key = "srv:" + s.host + "|" + s.ip;
+          const prev = (await this.storage.get(key)) || {};
+          let regions = Array.isArray(prev.regions) ? prev.regions : [];
+          if (reporter) {
+            regions = [reporter, ...regions.filter((r) => r !== reporter)].slice(0, 10);
+          }
+          await this.storage.put(key, { ...prev, ...s, regions, ts: Date.now(),
+            firstTs: prev.firstTs || Date.now() });
+        }
         return json({ ok: true, stored: list.length });
       }
       // merge current keys with any legacy "s:"-prefixed edges from older builds

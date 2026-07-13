@@ -72,6 +72,25 @@ await doInstance.storage.put("s:old.example|1.2.3.4", {name:"old.example",host:"
 r = await call("/api/servers");
 check("legacy s: keys merged into GET", (await r.json()).length===4);
 
+// 4b. reporter regions — last 10, deduped, newest first
+r = await call("/api/servers"); let gg = (await r.json()).find(e=>e.host==="google.com");
+check("first reporter region recorded", gg.regions?.length===1 && gg.regions[0]==="Cagayan de Oro, PH");
+cf.city = "Manila";
+await post("/api/servers", { list:[{name:"google.com",host:"google.com",ip:"142.250.72.14",
+  lat:37.42,lon:-122.08,city:"Mountain View",country:"US",type:"site"}] });
+r = await call("/api/servers"); gg = (await r.json()).find(e=>e.host==="google.com");
+check("second region prepended", gg.regions.length===2 && gg.regions[0]==="Manila, PH");
+await post("/api/servers", { list:[{name:"google.com",host:"google.com",ip:"142.250.72.14",
+  lat:37.42,lon:-122.08,city:"Mountain View",country:"US",type:"site"}] });
+r = await call("/api/servers"); gg = (await r.json()).find(e=>e.host==="google.com");
+check("same region deduped, stays first", gg.regions.length===2 && gg.regions[0]==="Manila, PH");
+for (let i=0;i<12;i++){ cf.city="City"+i;
+  await post("/api/servers", { list:[{name:"google.com",host:"google.com",ip:"142.250.72.14",
+    lat:37.42,lon:-122.08,city:"Mountain View",country:"US",type:"site"}] }); }
+r = await call("/api/servers"); gg = (await r.json()).find(e=>e.host==="google.com");
+check("region history capped at 10, newest first", gg.regions.length===10 && gg.regions[0]==="City11, PH");
+cf.city = "Cagayan de Oro";
+
 // 5. origins
 r = await post("/api/origins", { lat:8.4542, lon:124.6319, city:"Cagayan de Oro", country:"PH" });
 check("origin counted", (await r.json()).n===1);

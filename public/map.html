@@ -119,6 +119,39 @@
   .custombox input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 10px rgba(56,224,199,.25);}
   .custombox #custPing{font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.08em;color:var(--cyan);
     background:rgba(56,224,199,.14);border:1px solid var(--cyan);border-radius:8px;padding:0 18px;cursor:pointer;}
+  /* ---- server search + locate ---- */
+  .srch{display:flex;align-items:center;gap:6px;padding:4px 6px;}
+  .srch input{width:172px;font-family:var(--mono);font-size:11px;color:var(--ink);
+    background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:7px 9px;}
+  .srch input:focus{outline:none;border-color:var(--cyan);}
+  .srch button{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.08em;color:var(--cyan);
+    background:rgba(56,224,199,.12);border:1px solid var(--line);border-radius:6px;padding:7px 12px;cursor:pointer;white-space:nowrap;}
+  .srch button:hover{border-color:var(--cyan);}
+  @media(max-width:900px){.srch input{width:120px;}}
+  /* ---- recently mapped window (right side) ---- */
+  #recentWin{position:fixed;z-index:70;right:18px;top:74px;width:248px;max-height:46vh;display:flex;flex-direction:column;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.45);}
+  #recentWin h3{margin:0;padding:10px 12px 8px;font-family:var(--mono);font-weight:600;font-size:10.5px;
+    letter-spacing:.14em;color:var(--cyan);border-bottom:1px solid var(--line-soft);}
+  #recentList{overflow:auto;padding:4px 6px 8px;}
+  .recrow{display:flex;flex-direction:column;gap:1px;font-family:var(--mono);font-size:10.5px;
+    padding:6px 7px;border-radius:6px;cursor:pointer;color:var(--muted);}
+  .recrow:hover{background:rgba(56,224,199,.08);}
+  .recrow.on{background:rgba(56,224,199,.14);outline:1px solid var(--cyan);}
+  .recrow b{color:var(--ink);font-weight:600;display:flex;justify-content:space-between;gap:8px;}
+  .recrow b .ago{color:var(--muted);font-weight:400;flex:none;}
+  #recentWin .foot{font-size:9.5px;font-family:var(--mono);color:var(--muted);
+    border-top:1px solid var(--line-soft);padding:7px 12px;line-height:1.5;}
+  @media(max-width:760px){#recentWin{display:none;}}
+  /* search ↔ log exclusivity: the inactive control is visibly turned down */
+  .dimmed{opacity:.4;filter:saturate(.4);}
+  /* ---- reported-from region history in the panel ---- */
+  .regs{border-top:1px solid var(--line-soft);margin-top:8px;padding-top:7px;}
+  .regs .rh{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--muted);margin-bottom:4px;}
+  .regs .rr{display:flex;gap:7px;align-items:baseline;font-family:var(--mono);font-size:10.5px;color:var(--ink);padding:2px 0;}
+  .regs .rr i{font-style:normal;color:var(--muted);font-size:9px;flex:none;width:14px;}
+  /* ---- density heat toggle ---- */
+  #heatBtn.on{background:rgba(154,230,110,.14);color:#9AE66E;}
   /* ---- toggle switches (MY LINKS + check-all in dropdown lists) ---- */
   .sw{position:relative;display:inline-block;width:30px;height:16px;flex:none;cursor:pointer;}
   .sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;}
@@ -161,8 +194,19 @@
     <div class="seg"><button id="srvDD">◇ SERVERS ▾</button></div>
     <div class="ddlist" id="srvList" hidden></div>
   </div>
+  <div class="seg srch" id="srchSeg" title="find which mapped servers serve a URL — no ping is sent">
+    <input id="srvSearch" placeholder="url or ip — no ping" autocomplete="off" spellcheck="false">
+    <button id="srvLocate">◎ LOCATE</button>
+  </div>
+  <div class="seg"><button id="heatBtn" title="color servers by how many sites they host">◆ DENSITY</button></div>
   <div class="spacer"></div>
   <a class="back" href="./">← RUN A SPEED TEST</a>
+</div>
+
+<div id="recentWin" aria-label="Recently mapped servers">
+  <h3>◆ RECENTLY MAPPED</h3>
+  <div id="recentList"></div>
+  <div class="foot">newest server records worldwide — click one to fly there</div>
 </div>
 
 <button id="locBtn" title="Focus my location" aria-label="Focus my location" disabled>◎</button>
@@ -370,6 +414,12 @@ function showPanel(item,isServer){
     add("Edge location",[item.city,item.country].filter(Boolean).join(", "));
     add("Network",String(item.org||"").slice(0,30));
     add("Reported by",item.mine?"you (live ping)":"testers in another region");
+    if(Array.isArray(item.regions)&&item.regions.length){ // last 10 regions that pinged this edge
+      const rg=document.createElement("div");rg.className="regs";
+      rg.innerHTML=`<div class="rh">REPORTED FROM — LAST ${Math.min(item.regions.length,10)}</div>`+
+        item.regions.slice(0,10).map((r,i)=>`<div class="rr"><i>${i+1}.</i>${r}</div>`).join("");
+      rows.appendChild(rg);
+    }
     $("pNote").textContent="◆ Anycast CDN: this is the edge nearest to YOU right now — testers elsewhere reach a different edge of the same network.";
   }else{
     $("pTitle").textContent=`${item.city||"Unknown"}, ${item.country||""}`;
@@ -396,7 +446,7 @@ function showPanel(item,isServer){
 }
 
 /* ============ chart (amCharts 5 — animated lines, like the amcharts demo) ============ */
-let root,chart,bgSeries,pointSeries,serverSeries,userSeries,visitorSeries,rotateAnim,resumeTimer;
+let root,chart,bgSeries,pointSeries,serverSeries,heatSeries,userSeries,visitorSeries,rotateAnim,resumeTimer;
 const lineSeriesByColor={},packetAnims=[];
 function makeTooltip(hex){
   const t=am5.Tooltip.new(root,{getFillFromSprite:false,autoTextColor:false});
@@ -503,6 +553,18 @@ function buildChart(){
     cont.events.on("click",()=>showPanel(d,true));
     return am5.Bullet.new(r,{sprite:cont});
   });
+
+  // density heatmap: one circle per server IP, colored by how many sites it hosts
+  heatSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
+  heatSeries.set("tooltip",makeTooltip(0x9AE66E));
+  heatSeries.bullets.push((r,s,dataItem)=>{
+    const d=dataItem.dataContext||{};
+    const circ=am5.Circle.new(r,{radius:d.r,fill:am5.color(d.heatHex),fillOpacity:.55,
+      stroke:am5.color(d.heatHex),strokeOpacity:.9,strokeWidth:1,cursorOverStyle:"pointer",
+      tooltipText:`[bold]◆ ${d.ip}[/]\n${d.n} site${d.n===1?"":"s"} hosted on this server\n${d.hosts}`});
+    return am5.Bullet.new(r,{sprite:circ});
+  });
+  heatSeries.hide(0);
 
   // anonymous ping-origin markers
   originSeries=chart.series.push(am5map.MapPointSeries.new(root,{}));
@@ -643,7 +705,7 @@ async function loadEdge(svc){
     if(!ip)return null;
     const g=await geoIP(ip);
     if(!g)return null;
-    return{svc:svc.key,name:svc.name,hex:svc.hex,host:svc.host,ip,ping,mine:true,
+    return{svc:svc.key,name:svc.name,hex:svc.hex,host:svc.host,ip,ping,mine:true,ts:Date.now(),
       lat:g.lat,lon:g.lon,org:g.org,city:g.city,country:g.country,
       type:svc.custom?"custom":(svc.site?"site":"edge")};
   }catch{return null;}
@@ -706,6 +768,8 @@ async function shareAndFetchEdges(){
 }
 function setGlobeServers(){
   serverSeries.data.setAll(edges.map(e=>({geometry:{type:"Point",coordinates:[e.lon,e.lat]},...e})));
+  if(typeof heatOn!=="undefined"&&heatOn)heatSeries.data.setAll(buildHeatData());
+  if(typeof buildRecentLog==="function")try{buildRecentLog();}catch{}
   Object.keys(svcItems).forEach(k=>delete svcItems[k]);
   serverSeries.dataItems.forEach(di=>{
     const k=(di.dataContext&&di.dataContext.svc)||"other";
@@ -949,6 +1013,144 @@ $("locBtn").addEventListener("click",()=>{
     chart.zoomToGeoPoint({latitude:userLoc.lat,longitude:userLoc.lon},7,true,900);
   }
 });
+
+/* ============ heartbeat highlight + fly-to ============ */
+let beatAnims=[],beatSprites=[];
+function clearBeats(){
+  beatAnims.forEach(a=>{try{a.stop();}catch{}});beatAnims=[];
+  beatSprites.forEach(s=>{try{s.set("scale",1);}catch{}});beatSprites=[];
+}
+function beatDI(di){ // pulse a server diamond like a heartbeat
+  const s=di&&di.bullets&&di.bullets[0]&&di.bullets[0].get("sprite");
+  if(!s)return;
+  const a=s.animate({key:"scale",from:1,to:1.85,duration:520,loops:Infinity,
+    easing:am5.ease.yoyo(am5.ease.inOut(am5.ease.quad))});
+  beatAnims.push(a);beatSprites.push(s);
+}
+function focusGeo(lat,lon,zoom){
+  const ease=am5.ease.inOut(am5.ease.cubic);
+  if(mode==="3d"){
+    stopSpin();clearTimeout(resumeTimer);resumeTimer=setTimeout(startSpin,14000);
+    chart.animate({key:"rotationX",to:-lon,duration:900,easing:ease});
+    chart.animate({key:"rotationY",to:-lat,duration:900,easing:ease});
+    chart.animate({key:"zoomLevel",to:zoom||2.6,duration:900,easing:ease});
+  }else{
+    chart.zoomToGeoPoint({latitude:lat,longitude:lon},zoom?zoom*2.5:6.5,true,900);
+  }
+}
+const findServerDIs=pred=>serverSeries.dataItems.filter(di=>pred(di.dataContext||{}));
+
+/* the search and the log window can't drive the map at the same time —
+   whichever the user touches last owns the beats; the other is turned down */
+let focusOwner=null;
+function setFocusOwner(o){
+  if(focusOwner!==o)clearBeats(); // drop the other feature's results
+  focusOwner=o;
+  $("recentWin").classList.toggle("dimmed",o==="search");
+  $("srchSeg").classList.toggle("dimmed",o==="log");
+  if(o!=="log")$("recentList").querySelectorAll(".recrow.on").forEach(x=>x.classList.remove("on"));
+}
+
+/* ============ server search: locate WITHOUT pinging ============ */
+async function locateServers(){
+  const q=normHost($("srvSearch").value);
+  const btn=$("srvLocate");
+  if(!q)return;
+  setFocusOwner("search");clearBeats();
+  btn.disabled=true;btn.textContent="…";
+  try{
+    // 1. recorded servers serving this host
+    let dis=findServerDIs(d=>d.host===q||d.name===q);
+    // 2. resolve and match by IP (other hostnames on the same server count too)
+    let ip=null;
+    if(!dis.length){ ip=await resolveIP(q); if(ip)dis=findServerDIs(d=>d.ip===ip); }
+    // 3. never recorded → geolocate quietly and drop a temporary marker (no ping, not logged)
+    if(!dis.length&&ip){
+      const g=await geoIP(ip);
+      if(g){
+        serverSeries.data.push({geometry:{type:"Point",coordinates:[g.lon,g.lat]},
+          name:q,host:q,ip,hex:0x9AE66E,type:"site",temp:true,
+          lat:g.lat,lon:g.lon,city:g.city,country:g.country,org:g.org});
+        await new Promise(r=>setTimeout(r,60)); // let the data item render
+        dis=findServerDIs(d=>d.host===q&&d.temp);
+      }
+    }
+    if(!dis.length){btn.textContent="NOT FOUND";setTimeout(()=>btn.textContent="◎ LOCATE",1600);return;}
+    const d0=dis[0].dataContext;
+    focusGeo(d0.lat,d0.lon);
+    dis.forEach(beatDI);
+    btn.textContent="◎ LOCATE";
+  }finally{btn.disabled=false;if(btn.textContent==="…")btn.textContent="◎ LOCATE";}
+}
+$("srvLocate").addEventListener("click",locateServers);
+$("srvSearch").addEventListener("keydown",e=>{if(e.key==="Enter")locateServers();});
+$("srvSearch").addEventListener("input",()=>{ // typing turns the log window's results down
+  if(focusOwner==="log")setFocusOwner("search");
+});
+
+/* ============ recently mapped servers (right window) ============ */
+function timeAgo(ts){
+  const s=Math.max(1,Math.round((Date.now()-ts)/1000));
+  if(s<60)return s+"s ago"; const m=Math.round(s/60);
+  if(m<60)return m+"m ago"; const h=Math.round(m/60);
+  if(h<48)return h+"h ago"; return Math.round(h/24)+"d ago";
+}
+function buildRecentLog(){
+  const list=$("recentList");list.innerHTML="";
+  const recent=[...edges].filter(e=>e&&e.ts&&e.lat!=null)
+    .sort((a,b)=>b.ts-a.ts).slice(0,12);
+  if(!recent.length){list.innerHTML=`<div class="recrow" style="cursor:default">nothing mapped yet</div>`;return;}
+  recent.forEach(e=>{
+    const d=document.createElement("div");d.className="recrow";
+    d.innerHTML=`<b><span>${e.name||e.host}</span><span class="ago">${timeAgo(e.ts)}</span></b>
+      <span>${[e.city,e.country].filter(Boolean).join(", ")||e.ip}</span>`;
+    d.addEventListener("click",()=>{
+      setFocusOwner("log"); // turns the URL-search results down
+      list.querySelectorAll(".recrow.on").forEach(x=>x.classList.remove("on"));
+      d.classList.add("on");
+      focusGeo(e.lat,e.lon);
+      const dis=findServerDIs(x=>x.host===e.host&&x.ip===e.ip);
+      dis.length?dis.forEach(beatDI):beatNearest(e); // fallback: same spot
+      function beatNearest(t){findServerDIs(x=>x.lat===t.lat&&x.lon===t.lon).forEach(beatDI);}
+    });
+    list.appendChild(d);
+  });
+}
+
+/* ============ density heatmap: sites hosted per server ============ */
+let heatOn=false;
+function heatColor(t){ // 0 → red, .5 → yellow, 1 → green
+  const mix=(a,b,u)=>Math.round(a+(b-a)*u);
+  const c=t<.5
+    ?[mix(0xE8,0xF5,t*2),mix(0x5D,0xC8,t*2),mix(0x5D,0x4B,t*2)]
+    :[mix(0xF5,0x59,(t-.5)*2),mix(0xC8,0xD9,(t-.5)*2),mix(0x4B,0x8C,(t-.5)*2)];
+  return (c[0]<<16)|(c[1]<<8)|c[2];
+}
+function buildHeatData(){
+  const byIp=new Map(); // server = IP; density = distinct hosts recorded on it
+  edges.forEach(e=>{
+    if(!e||!e.ip||e.lat==null)return;
+    let b=byIp.get(e.ip);
+    if(!b){b={ip:e.ip,lat:e.lat,lon:e.lon,hosts:new Set()};byIp.set(e.ip,b);}
+    b.hosts.add(e.host);
+  });
+  const arr=[...byIp.values()];
+  const max=Math.max(1,...arr.map(b=>b.hosts.size));
+  return arr.map(b=>{
+    const n=b.hosts.size;
+    const t=max===1?0:Math.log(n)/Math.log(max); // log scale: 1 site → red, the busiest → green
+    return{geometry:{type:"Point",coordinates:[b.lon,b.lat]},ip:b.ip,n,
+      r:6+Math.min(8,(n-1)*1.6),heatHex:heatColor(t),
+      hosts:[...b.hosts].slice(0,6).join(", ")+(n>6?" …":"")};
+  });
+}
+function setHeat(on){
+  heatOn=on;
+  $("heatBtn").classList.toggle("on",on);
+  if(on){heatSeries.data.setAll(buildHeatData());heatSeries.show();serverSeries.hide();clearBeats();}
+  else{heatSeries.hide();serverSeries.show();}
+}
+$("heatBtn").addEventListener("click",()=>setHeat(!heatOn));
 
 /* ============ controls ============ */
 let mode="3d",range="24h";
