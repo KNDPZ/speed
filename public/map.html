@@ -289,26 +289,36 @@ function geoCachePut(ip,g){
 }
 async function geoIP(ip){
   const hit=geoCacheGet(ip); if(hit)return hit;
-  try{ // same-origin first: the worker looks each IP up ONCE and caches it for
-       // everyone — immune to ipwho.is 429s and tracking-prevention blocking
+  try{ // shared same-origin cache first — seeded by earlier visitors
     const r=await fetch("/api/geoip?ip="+encodeURIComponent(ip),{signal:AbortSignal.timeout(8000)});
     if(r.ok){const g=await r.json();if(g&&g.lat!=null){geoCachePut(ip,g);return g;}}
-    if(r.status===404)return null; // worker tried both providers — don't retry client-side
+    // any non-OK (miss, old worker, error) → fall through
   }catch{}
-  try{ // direct fallbacks only if the worker itself is unreachable (e.g. local file)
-    const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
-    if(g&&g.success!==false&&g.latitude!=null){
-      const out={lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",
-        org:(g.connection&&g.connection.org)||""};
-      geoCachePut(ip,out);return out;
-    }
+  const seed=g=>{ // share what this browser found so nobody looks this IP up again
+    geoCachePut(ip,g);
+    fetch("/api/geoip",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ip,...g}),signal:AbortSignal.timeout(6000)}).catch(()=>{});
+    return g;
+  };
+  // our own recorded edges know this IP? (self-healing — works with ALL providers down)
+  if(typeof edgeGeoHints!=="undefined"&&edgeGeoHints[ip])return seed(edgeGeoHints[ip]);
+  try{ // geojs.io: keyless, CORS, not on tracker blocklists, no aggressive limits
+    const g=await fetch(`https://get.geojs.io/v1/ip/geo/${encodeURIComponent(ip)}.json`,
+      {signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(g&&g.latitude!=null&&!isNaN(+g.latitude))
+      return seed({lat:+g.latitude,lon:+g.longitude,city:g.city||"",country:g.country_code||"",
+        org:String(g.organization_name||g.organization||"").replace(/^AS\d+\s+/,"")});
   }catch{}
   try{
+    const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(g&&g.success!==false&&g.latitude!=null)
+      return seed({lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",
+        org:(g.connection&&g.connection.org)||""});
+  }catch{}
+  try{ // last resort — often blocked by tracking prevention
     const g=await fetch(`https://ipapi.co/${ip}/json/`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
-    if(g&&g.latitude!=null){
-      const out={lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",org:g.org||""};
-      geoCachePut(ip,out);return out;
-    }
+    if(g&&g.latitude!=null)
+      return seed({lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",org:g.org||""});
   }catch{}
   return null;
 }
@@ -611,6 +621,21 @@ async function pingHost(urlFn){
     }catch{}
   }
   return t.length?Math.round(Math.min(...t)):null;
+}
+/* self-healing geo: every edge ever recorded (v8+ data included) already has
+   lat/lon in the worker — index it by IP so lines can draw even if every
+   third-party geo provider is rate-limiting or blocked */
+const edgeGeoHints={};
+async function prefetchEdgeGeoHints(){
+  try{
+    const r=await fetch("/api/servers",{signal:AbortSignal.timeout(8000)});
+    if(!r.ok)return;
+    const list=await r.json();
+    (Array.isArray(list)?list:[]).forEach(e=>{
+      if(e&&e.ip&&e.lat!=null&&e.lon!=null&&!edgeGeoHints[e.ip])
+        edgeGeoHints[e.ip]={lat:e.lat,lon:e.lon,city:e.city||"",country:e.country||"",org:e.org||""};
+    });
+  }catch{}
 }
 async function loadEdge(svc){
   try{
@@ -1019,6 +1044,7 @@ async function logAndLoadPresence(){
   // every step is guarded: on a flaky network one failed lookup must not take
   // the icons, lines, or presence markers down with it (the old boot did)
   const T=async fn=>{try{return await fn();}catch(e){console.warn("boot step:",e);return null;}};
+  await T(prefetchEdgeGeoHints); // recorded geo first — providers become optional
   const [u,...mine]=await Promise.all([T(detectUser),...SERVICES.map(s=>T(()=>loadEdge(s)))]);
   userLoc=u;myEdges=mine.filter(Boolean);
   userVpn=looksVpn(userLoc&&userLoc.org);

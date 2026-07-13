@@ -94,41 +94,33 @@ check("log accepted", (await r.json()).ok===true);
 r = await call("/api/log"); j = await r.json();
 check("log-get returns session with geo", j.length===1 && j[0].targets.length===2 && j[0].city==="Cagayan de Oro");
 
-// 8. geoip — server-side lookup, cached once for everyone
+// 8. geoip — visitor-seeded shared cache (worker never calls providers itself)
 let extCalls = 0;
 const realFetch = globalThis.fetch;
-globalThis.fetch = async (u, init) => {
+globalThis.fetch = async (u, init) => { // trip-wire: any provider call from the worker is a bug
   const s = String(u);
-  if (s.startsWith("https://ipwho.is/")) {
-    extCalls++;
-    if (s.endsWith("/8.8.8.8"))
-      return new Response(JSON.stringify({ success:true, latitude:37.4, longitude:-122.07,
-        city:"Mountain View", country_code:"US", connection:{org:"Google LLC"} }));
-    return new Response(JSON.stringify({ success:false }), { status:429 }); // rate-limited
-  }
-  if (s.startsWith("https://ipapi.co/")) {
-    extCalls++;
-    if (s.includes("1.1.1.1"))
-      return new Response(JSON.stringify({ latitude:-27.47, longitude:153.03,
-        city:"Brisbane", country_code:"AU", org:"Cloudflare" }));
-    return new Response(JSON.stringify({ error:true }), { status:429 });
-  }
+  if (s.startsWith("https://ipwho.is/") || s.startsWith("https://ipapi.co/")) { extCalls++; 
+    return new Response(JSON.stringify({ error: "should never be called" }), { status: 500 }); }
   return realFetch(u, init);
 };
+r = await call("/api/geoip?ip=8.8.8.8");
+check("cold cache → 404 miss", r.status===404 && (await r.json()).error==="miss");
+r = await post("/api/geoip", { ip:"8.8.8.8", lat:37.4419, lon:-122.0782,
+  city:"Mountain View", country:"US", org:"Google LLC" });
+check("browser seeds the cache", (await r.json()).ok===true);
 r = await call("/api/geoip?ip=8.8.8.8"); j = await r.json();
-check("geoip resolves via ipwho.is", j.city==="Mountain View" && j.org==="Google LLC");
-const callsAfterFirst = extCalls;
-r = await call("/api/geoip?ip=8.8.8.8"); j = await r.json();
-check("second lookup served from DO cache", j.city==="Mountain View" && extCalls===callsAfterFirst);
-r = await call("/api/geoip?ip=1.1.1.1"); j = await r.json();
-check("falls back to ipapi.co when ipwho.is 429s", j.city==="Brisbane");
-r = await call("/api/geoip?ip=203.0.113.9");
-check("both providers down → 404 (negative-cached)", r.status===404);
-const callsAfterFail = extCalls;
-r = await call("/api/geoip?ip=203.0.113.9");
-check("failed lookup not retried within 6h", r.status===404 && extCalls===callsAfterFail);
+check("next visitor gets a cache hit", j.city==="Mountain View" && j.lat===37.44 && j.org==="Google LLC");
+r = await post("/api/geoip", { ip:"8.8.8.8", lat:999, lon:0 });
+check("out-of-range geo rejected", r.status===400);
+r = await post("/api/geoip", { ip:"not-an-ip", lat:10, lon:10 });
+check("invalid ip in seed rejected", r.status===400);
 r = await call("/api/geoip?ip=not-an-ip");
-check("invalid ip rejected", r.status===400);
+check("invalid ip in lookup rejected", r.status===400);
+r = await post("/api/geoip", { ip:"2606:4700:4700::1111", lat:-27.47, lon:153.03, city:"Brisbane", country:"AU" });
+check("IPv6 seed accepted", (await r.json()).ok===true);
+r = await call("/api/geoip?ip=2606:4700:4700::1111");
+check("IPv6 cache hit", (await r.json()).city==="Brisbane");
+check("worker made ZERO provider calls", extCalls===0);
 globalThis.fetch = realFetch;
 
 // 9. stats aggregation
