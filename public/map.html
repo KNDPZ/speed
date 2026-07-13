@@ -274,17 +274,41 @@ async function resolveIP(host){
   if(isIPv(host))return host;                    // already an IP (v4 or v6)
   return (await dohQuery(host,"A"))||(await dohQuery(host,"AAAA")); // IPv6 fallback
 }
+const GEO_LS="cb_geo_v1",GEO_TTL=6048e5; // 7-day browser cache
+function geoCacheGet(ip){
+  try{const m=JSON.parse(localStorage.getItem(GEO_LS)||"{}"),e=m[ip];
+    if(e&&Date.now()-e.ts<GEO_TTL)return e.g;}catch{}
+  return null;
+}
+function geoCachePut(ip,g){
+  try{const m=JSON.parse(localStorage.getItem(GEO_LS)||"{}");
+    m[ip]={g,ts:Date.now()};
+    const keys=Object.keys(m); // keep the cache small
+    if(keys.length>120)keys.sort((a,b)=>m[a].ts-m[b].ts).slice(0,keys.length-120).forEach(k=>delete m[k]);
+    localStorage.setItem(GEO_LS,JSON.stringify(m));}catch{}
+}
 async function geoIP(ip){
-  try{
-    const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
-    if(g&&g.success!==false&&g.latitude!=null)
-      return{lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",
-        org:(g.connection&&g.connection.org)||""};
+  const hit=geoCacheGet(ip); if(hit)return hit;
+  try{ // same-origin first: the worker looks each IP up ONCE and caches it for
+       // everyone — immune to ipwho.is 429s and tracking-prevention blocking
+    const r=await fetch("/api/geoip?ip="+encodeURIComponent(ip),{signal:AbortSignal.timeout(8000)});
+    if(r.ok){const g=await r.json();if(g&&g.lat!=null){geoCachePut(ip,g);return g;}}
+    if(r.status===404)return null; // worker tried both providers — don't retry client-side
   }catch{}
-  try{ // fallback geolocator — ipwho.is rate-limits under load
+  try{ // direct fallbacks only if the worker itself is unreachable (e.g. local file)
+    const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(g&&g.success!==false&&g.latitude!=null){
+      const out={lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",
+        org:(g.connection&&g.connection.org)||""};
+      geoCachePut(ip,out);return out;
+    }
+  }catch{}
+  try{
     const g=await fetch(`https://ipapi.co/${ip}/json/`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
-    if(g&&g.latitude!=null)
-      return{lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",org:g.org||""};
+    if(g&&g.latitude!=null){
+      const out={lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",org:g.org||""};
+      geoCachePut(ip,out);return out;
+    }
   }catch{}
   return null;
 }

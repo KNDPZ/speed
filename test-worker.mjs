@@ -94,11 +94,48 @@ check("log accepted", (await r.json()).ok===true);
 r = await call("/api/log"); j = await r.json();
 check("log-get returns session with geo", j.length===1 && j[0].targets.length===2 && j[0].city==="Cagayan de Oro");
 
-// 8. stats aggregation
+// 8. geoip — server-side lookup, cached once for everyone
+let extCalls = 0;
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (u, init) => {
+  const s = String(u);
+  if (s.startsWith("https://ipwho.is/")) {
+    extCalls++;
+    if (s.endsWith("/8.8.8.8"))
+      return new Response(JSON.stringify({ success:true, latitude:37.4, longitude:-122.07,
+        city:"Mountain View", country_code:"US", connection:{org:"Google LLC"} }));
+    return new Response(JSON.stringify({ success:false }), { status:429 }); // rate-limited
+  }
+  if (s.startsWith("https://ipapi.co/")) {
+    extCalls++;
+    if (s.includes("1.1.1.1"))
+      return new Response(JSON.stringify({ latitude:-27.47, longitude:153.03,
+        city:"Brisbane", country_code:"AU", org:"Cloudflare" }));
+    return new Response(JSON.stringify({ error:true }), { status:429 });
+  }
+  return realFetch(u, init);
+};
+r = await call("/api/geoip?ip=8.8.8.8"); j = await r.json();
+check("geoip resolves via ipwho.is", j.city==="Mountain View" && j.org==="Google LLC");
+const callsAfterFirst = extCalls;
+r = await call("/api/geoip?ip=8.8.8.8"); j = await r.json();
+check("second lookup served from DO cache", j.city==="Mountain View" && extCalls===callsAfterFirst);
+r = await call("/api/geoip?ip=1.1.1.1"); j = await r.json();
+check("falls back to ipapi.co when ipwho.is 429s", j.city==="Brisbane");
+r = await call("/api/geoip?ip=203.0.113.9");
+check("both providers down → 404 (negative-cached)", r.status===404);
+const callsAfterFail = extCalls;
+r = await call("/api/geoip?ip=203.0.113.9");
+check("failed lookup not retried within 6h", r.status===404 && extCalls===callsAfterFail);
+r = await call("/api/geoip?ip=not-an-ip");
+check("invalid ip rejected", r.status===400);
+globalThis.fetch = realFetch;
+
+// 9. stats aggregation
 r = await call("/api/stats?range=24h"); j = await r.json();
 check("stats aggregates the test", j.length===1 && j[0].n===1 && j[0].down===87.5 && j[0].isps[0].name==="Test ISP");
 
-// 9. 404
+// 10. 404
 r = await call("/api/nope");
 check("unknown API 404s", r.status===404);
 

@@ -110,6 +110,17 @@ export default {
       return json({ ...g, org: str(cf.asOrganization, 80) || "" });
     }
 
+    // -------- geoip: same-origin IP geolocation with a permanent DO cache --------
+    // The map used to geolocate 9+ IPs per visitor via ipwho.is straight from the
+    // browser: rate-limited (429) within minutes and ad-blocked (ipapi.co) by
+    // Edge/Brave tracking prevention. Now each unique IP is looked up ONCE by the
+    // worker and cached for everyone — same-origin, so nothing can block it.
+    if (url.pathname === "/api/geoip") {
+      const ip = str(url.searchParams.get("ip"), 45);
+      if (!isIP(ip)) return json({ error: "bad ip" }, 400);
+      return stub.fetch("https://do/geo?ip=" + encodeURIComponent(ip));
+    }
+
     // -------- results (geo attached HERE — request.cf only exists at the edge) --------
     if (request.method === "POST" && url.pathname === "/api/results") {
       let body;
@@ -275,6 +286,37 @@ export class SpeedDB {
     if (url.pathname === "/log-get") {
       const l = await this.storage.list({ prefix: "log:", limit: 500, reverse: true });
       return json([...l.values()]);
+    }
+
+    if (url.pathname === "/geo") {
+      const ip = url.searchParams.get("ip") || "";
+      const key = "geo:" + ip;
+      const cached = await this.storage.get(key);
+      // permanent positive cache (CDN edge IPs don't move); retry failures after 6 h
+      if (cached && (cached.ok || Date.now() - cached.ts < 216e5)) {
+        return cached.ok ? json(cached.g) : json({ error: "unresolved" }, 404);
+      }
+      let g = null;
+      try {
+        const r = await fetch("https://ipwho.is/" + ip, { signal: AbortSignal.timeout(6000) });
+        const j = await r.json();
+        if (j && j.success !== false && j.latitude != null)
+          g = { lat: +(+j.latitude).toFixed(2), lon: +(+j.longitude).toFixed(2),
+            city: String(j.city || "").slice(0, 60), country: String(j.country_code || "").slice(0, 3),
+            org: String((j.connection && j.connection.org) || "").slice(0, 60) };
+      } catch {}
+      if (!g) {
+        try {
+          const r = await fetch("https://ipapi.co/" + ip + "/json/", { signal: AbortSignal.timeout(6000) });
+          const j = await r.json();
+          if (j && j.latitude != null)
+            g = { lat: +(+j.latitude).toFixed(2), lon: +(+j.longitude).toFixed(2),
+              city: String(j.city || "").slice(0, 60), country: String(j.country_code || "").slice(0, 3),
+              org: String(j.org || "").slice(0, 60) };
+        } catch {}
+      }
+      await this.storage.put(key, { ok: !!g, g, ts: Date.now() });
+      return g ? json(g) : json({ error: "unresolved" }, 404);
     }
 
     if (url.pathname === "/stats") {
