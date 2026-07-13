@@ -150,6 +150,9 @@
   .regs .rh{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--muted);margin-bottom:4px;}
   .regs .rr{display:flex;gap:7px;align-items:baseline;font-family:var(--mono);font-size:10.5px;color:var(--ink);padding:2px 0;}
   .regs .rr i{font-style:normal;color:var(--muted);font-size:9px;flex:none;width:14px;}
+  .clsrv{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--cyan);
+    border-top:1px solid var(--line-soft);margin-top:6px;padding:6px 0 2px;}
+  .clsrv:first-child{border-top:none;margin-top:0;}
   /* ---- density heat toggle ---- */
   #heatBtn.on{background:rgba(154,230,110,.14);color:#9AE66E;}
   /* ---- toggle switches (MY LINKS + check-all in dropdown lists) ---- */
@@ -194,8 +197,8 @@
     <div class="seg"><button id="srvDD">◇ SERVERS ▾</button></div>
     <div class="ddlist" id="srvList" hidden></div>
   </div>
-  <div class="seg srch" id="srchSeg" title="find which mapped servers serve a URL — no ping is sent">
-    <input id="srvSearch" placeholder="url or ip — no ping" autocomplete="off" spellcheck="false">
+  <div class="seg srch" id="srchSeg" title="keyword search across every mapped site — no ping is sent">
+    <input id="srvSearch" placeholder="keyword, url or ip — no ping" autocomplete="off" spellcheck="false">
     <button id="srvLocate">◎ LOCATE</button>
   </div>
   <div class="seg"><button id="heatBtn" title="color servers by how many sites they host">◆ DENSITY</button></div>
@@ -542,6 +545,18 @@ function buildChart(){
   serverSeries.set("tooltip",makeTooltip(0xFF3FA4));
   serverSeries.bullets.push((r,s,dataItem)=>{
     const d=dataItem.dataContext||{},c=am5.color(d.hex||0xFF3FA4);
+    if(d.cluster){ // merged marker: one big click target for the whole stack
+      const cont=am5.Container.new(r,{cursorOverStyle:"pointer",
+        tooltipText:`[bold]◆ ${d.count} sites · ${d.srvCount} server${d.srvCount===1?"":"s"}[/]\n${[d.city,d.country].filter(Boolean).join(", ")||"this area"}\nnot all on one machine — click to list them`});
+      cont.children.push(am5.Circle.new(r,{radius:15,fill:c,fillOpacity:d.mine?.3:.18,
+        stroke:c,strokeOpacity:.85,strokeWidth:1.2}));
+      cont.children.push(am5.Picture.new(r,{src:ICON.server,width:13,height:13,
+        centerX:am5.p50,centerY:am5.p50,opacity:.9}));
+      cont.children.push(am5.Label.new(r,{text:"×"+d.count,fontSize:9.5,fontWeight:"600",
+        fontFamily:"IBM Plex Mono",fill:am5.color(0xEAF6F3),centerX:am5.p0,centerY:am5.p100,dx:8,dy:-8}));
+      cont.events.on("click",()=>showServerCluster(d));
+      return am5.Bullet.new(r,{sprite:cont});
+    }
     const tip=d.mine
       ?`[bold]◆ ${d.name}[/]\n${d.host}\nyour ping: ${d.ping!=null?fmt(d.ping,0)+" ms":"—"} · click for details`
       :`[bold]◆ ${d.name}[/]\n${d.host}\nedge reached by testers elsewhere · click for details`;
@@ -766,16 +781,42 @@ async function shareAndFetchEdges(){
     });
   edges=[...myEdges,...extra];
 }
+/* stacked geo-centroids make icons unclickable at ANY zoom (two servers "in
+   Quezon City" render 0px apart) — merge everything within one ~0.3° cell
+   into a single counted marker; clicking it lists the members grouped by
+   the actual server (IP) they live on */
+const CLUSTER_CELL=.3;
 function setGlobeServers(){
-  serverSeries.data.setAll(edges.map(e=>({geometry:{type:"Point",coordinates:[e.lon,e.lat]},...e})));
+  const shown=edges.filter(e=>e&&e.lat!=null&&svcChecked[e.svc]!==false);
+  const cells=new Map();
+  shown.forEach(e=>{
+    const k=Math.round(e.lat/CLUSTER_CELL)+"|"+Math.round(e.lon/CLUSTER_CELL);
+    let c=cells.get(k); if(!c){c=[];cells.set(k,c);} c.push(e);
+  });
+  const items=[];
+  cells.forEach(group=>{
+    if(group.length===1){
+      const e=group[0];
+      items.push({geometry:{type:"Point",coordinates:[e.lon,e.lat]},...e});
+    }else{
+      const lat=group.reduce((s,e)=>s+e.lat,0)/group.length;
+      const lon=group.reduce((s,e)=>s+e.lon,0)/group.length;
+      const ips=new Set(group.map(e=>e.ip));
+      items.push({geometry:{type:"Point",coordinates:[lon,lat]},
+        cluster:true,members:group,count:group.length,srvCount:ips.size,
+        lat,lon,city:(group.find(e=>e.city)||{}).city||"",
+        country:(group.find(e=>e.country)||{}).country||"",
+        hex:(group.find(e=>e.mine)||group[0]).hex,mine:group.some(e=>e.mine)});
+    }
+  });
+  serverSeries.data.setAll(items);
   if(typeof heatOn!=="undefined"&&heatOn)heatSeries.data.setAll(buildHeatData());
   if(typeof buildRecentLog==="function")try{buildRecentLog();}catch{}
   Object.keys(svcItems).forEach(k=>delete svcItems[k]);
-  serverSeries.dataItems.forEach(di=>{
-    const k=(di.dataContext&&di.dataContext.svc)||"other";
-    (svcItems[k]=svcItems[k]||[]).push(di);
+  edges.forEach(e=>{ // counts per service — clustering doesn't change membership
+    const k=(e&&e.svc)||"other";
+    (svcItems[k]=svcItems[k]||[]).push(e);
   });
-  Object.entries(svcChecked).forEach(([k,on])=>{ if(!on)applyService(k,false); });
 }
 function addLink(e){
   if(!userLoc)return;
@@ -837,6 +878,38 @@ function buildLocIndex(){
   origins.forEach(o=>push(o.lat,o.lon,{t:"origin",o}));
   points.forEach(p=>push(p.lat,p.lon,{t:"testers",p}));
 }
+function showServerCluster(d){ // merged-marker click: members grouped by the ACTUAL server (IP)
+  const win=$("cluster"),rows=$("clRows");rows.innerHTML="";
+  $("clTitle").textContent=`AT ${String(d.city||"THIS AREA").toUpperCase()} — ${d.count} SITES ON ${d.srvCount} SERVER${d.srvCount===1?"":"S"}`;
+  const byIp=new Map();
+  d.members.forEach(m=>{let a=byIp.get(m.ip);if(!a){a=[];byIp.set(m.ip,a);}a.push(m);});
+  const select=(row,item)=>{
+    rows.querySelectorAll(".clitem.sel").forEach(x=>x.classList.remove("sel"));
+    row.classList.add("sel");
+    showPanel({...item,_fromCluster:1},true);
+  };
+  let i=0;
+  byIp.forEach((ms,ip)=>{
+    i++;
+    const h=document.createElement("div");h.className="clsrv";
+    h.textContent=`SERVER ${i} · ${ip} — ${ms.length} site${ms.length===1?"":"s"}`;
+    rows.appendChild(h);
+    ms.forEach(m=>{
+      const row=document.createElement("div");row.className="row lrow clitem";
+      row.innerHTML=`<span class="dia" style="background:${hexCss(m.hex||0xFF3FA4)};color:${hexCss(m.hex||0xFF3FA4)}"></span><span>${m.name||m.host}${m.mine?' <span style="color:var(--magenta)">· yours</span>':""}</span>`;
+      row.style.cursor="pointer";
+      row.addEventListener("click",()=>select(row,m));
+      rows.appendChild(row);
+    });
+  });
+  const note=document.createElement("div");note.className="row lrow";
+  note.style.cssText="color:var(--muted);font-size:9.5px;border-top:1px solid var(--line-soft);margin-top:5px;padding-top:6px;";
+  note.textContent=d.srvCount>1
+    ?"these sites share this map spot but live on DIFFERENT servers"
+    :"all of these sites are hosted on the same server";
+  rows.appendChild(note);
+  win.style.display="block";
+}
 function showCluster(lat,lon){
   const items=(locIndex[locKey(lat,lon)]||[]);
   const win=$("cluster"),rows=$("clRows");
@@ -888,7 +961,7 @@ function setLinksVisible(){ refreshLinks(); }
 /* per-service visibility: diamond(s) + its animated link */
 function applyService(key,on){
   svcChecked[key]=on;
-  (svcItems[key]||[]).forEach(di=>setDIVisible(di,on));
+  setGlobeServers(); // unchecked services are filtered out of the clustered layer
   refreshLinks();
 }
 let ddTab="servers";
@@ -1038,47 +1111,65 @@ function focusGeo(lat,lon,zoom){
     chart.zoomToGeoPoint({latitude:lat,longitude:lon},zoom?zoom*2.5:6.5,true,900);
   }
 }
-const findServerDIs=pred=>serverSeries.dataItems.filter(di=>pred(di.dataContext||{}));
+const findServerDIs=pred=>serverSeries.dataItems.filter(di=>{
+  const d=di.dataContext||{};
+  return d.cluster?d.members.some(pred):pred(d); // merged markers match on any member
+});
 
 /* the search and the log window can't drive the map at the same time —
    whichever the user touches last owns the beats; the other is turned down */
 let focusOwner=null;
 function setFocusOwner(o){
-  if(focusOwner!==o)clearBeats(); // drop the other feature's results
+  clearBeats(); // ALWAYS — a new selection replaces the previous beats, same owner or not
   focusOwner=o;
   $("recentWin").classList.toggle("dimmed",o==="search");
   $("srchSeg").classList.toggle("dimmed",o==="log");
   if(o!=="log")$("recentList").querySelectorAll(".recrow.on").forEach(x=>x.classList.remove("on"));
 }
 
-/* ============ server search: locate WITHOUT pinging ============ */
+/* ============ server search: keywords, not URLs — locate WITHOUT pinging ============ */
+const havKm=(a,b)=>{ // great-circle distance, for "nearest server to you"
+  const R=6371,d=Math.PI/180;
+  const x=Math.sin((b.lat-a.lat)*d/2)**2+Math.cos(a.lat*d)*Math.cos(b.lat*d)*Math.sin((b.lon-a.lon)*d/2)**2;
+  return 2*R*Math.asin(Math.sqrt(x));
+};
 async function locateServers(){
-  const q=normHost($("srvSearch").value);
+  const raw=$("srvSearch").value.trim().toLowerCase();
   const btn=$("srvLocate");
-  if(!q)return;
-  setFocusOwner("search");clearBeats();
+  if(!raw)return;
+  setFocusOwner("search");
   btn.disabled=true;btn.textContent="…";
   try{
-    // 1. recorded servers serving this host
-    let dis=findServerDIs(d=>d.host===q||d.name===q);
-    // 2. resolve and match by IP (other hostnames on the same server count too)
-    let ip=null;
-    if(!dis.length){ ip=await resolveIP(q); if(ip)dis=findServerDIs(d=>d.ip===ip); }
-    // 3. never recorded → geolocate quietly and drop a temporary marker (no ping, not logged)
-    if(!dis.length&&ip){
-      const g=await geoIP(ip);
-      if(g){
-        serverSeries.data.push({geometry:{type:"Point",coordinates:[g.lon,g.lat]},
-          name:q,host:q,ip,hex:0x9AE66E,type:"site",temp:true,
-          lat:g.lat,lon:g.lon,city:g.city,country:g.country,org:g.org});
-        await new Promise(r=>setTimeout(r,60)); // let the data item render
-        dis=findServerDIs(d=>d.host===q&&d.temp);
+    // keyword match: "google" lights up every recorded host containing it
+    const matchQ=d=>((d.host||"")+" "+(d.name||"")).toLowerCase().includes(raw);
+    let dis=findServerDIs(matchQ);
+    // nothing recorded matches → treat it as a hostname/IP and resolve quietly (no ping, not logged)
+    if(!dis.length){
+      const q=normHost(raw);
+      if(/^[a-z0-9.:\-]+$/i.test(q)&&(q.includes(".")||q.includes(":"))){
+        const ip=await resolveIP(q);
+        if(ip){
+          dis=findServerDIs(d=>d.ip===ip);
+          if(!dis.length){
+            const g=await geoIP(ip);
+            if(g){
+              serverSeries.data.push({geometry:{type:"Point",coordinates:[g.lon,g.lat]},
+                name:q,host:q,ip,hex:0x9AE66E,type:"site",temp:true,
+                lat:g.lat,lon:g.lon,city:g.city,country:g.country,org:g.org});
+              await new Promise(r=>setTimeout(r,60)); // let the data item render
+              dis=findServerDIs(d=>d.host===q&&d.temp);
+            }
+          }
+        }
       }
     }
     if(!dis.length){btn.textContent="NOT FOUND";setTimeout(()=>btn.textContent="◎ LOCATE",1600);return;}
-    const d0=dis[0].dataContext;
-    focusGeo(d0.lat,d0.lon);
-    dis.forEach(beatDI);
+    // focus the match CLOSEST to the user; a moderate zoom keeps the rest one zoom-out away
+    let target=dis[0].dataContext;
+    if(userLoc)target=dis.map(di=>di.dataContext)
+      .reduce((best,d)=>havKm(userLoc,d)<havKm(userLoc,best)?d:best,target);
+    focusGeo(target.lat,target.lon,2.1);
+    dis.forEach(beatDI); // every match worldwide beats — zoom out to see them all
     btn.textContent="◎ LOCATE";
   }finally{btn.disabled=false;if(btn.textContent==="…")btn.textContent="◎ LOCATE";}
 }
