@@ -1,4 +1,4 @@
-name = "crossbench"
+name = "speed"
 main = "worker.mjs"
 compatibility_date = "2025-01-01"
 
