@@ -7,10 +7,14 @@
  *   POST /api/results        store a result   -> { id }
  *   GET  /api/results/:id    fetch a result   -> result JSON
  *   GET  /api/stats?range=24h|7d|30d          -> [{city,country,lat,lon,down,up,ping,n}]
- *   POST /api/servers        log CDN/site edges a visitor's region resolved
+ *   POST /api/servers        log CDN/site edges — accepts {servers:[…]} OR {list:[…]}
  *   GET  /api/servers        every edge ever recorded (they persist)
  *   POST /api/origins        count an anonymous ping origin (city-level, no IP)
  *   GET  /api/origins        all origins with counts
+ *   POST /api/presence       record a map visit (city-level footprint, 1/city/hour)
+ *   GET  /api/presence       visits in the last 24 h
+ *   POST /api/log            anonymous session log (device id + pinged targets)
+ *   GET  /api/log            latest sessions (feeds access.html)
  * Privacy: client IP is never stored. Geo (city/lat/lon) comes from
  * Cloudflare's edge metadata, rounded to ~city precision.
  */
@@ -20,7 +24,6 @@ const CORS = {
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
-const stubOf = (env) => env.SPEED_DB.get(env.SPEED_DB.idFromName("global"));
 const json = (o, s = 200) =>
   new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json", ...CORS } });
 
@@ -29,6 +32,12 @@ const num = (v, min, max) => {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : null;
 };
 const str = (v, len) => (typeof v === "string" ? v.slice(0, len) : null);
+
+// IPv4 or IPv6 — the frontend falls back to AAAA when a host has no A record
+const IP4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
+const IP6_RE = /^[0-9a-f:]{2,45}$/i; // colons + hex, incl. ::-compressed forms
+const isIP = (v) => typeof v === "string" && (IP4_RE.test(v) || (v.includes(":") && IP6_RE.test(v)));
+const HOST_RE = /^[a-z0-9.-]+$/i;
 
 function sanitize(body) {
   return {
@@ -53,6 +62,28 @@ function sanitize(body) {
   };
 }
 
+function sanitizeServer(s) {
+  const out = {
+    name: str(s.name, 40),
+    host: str(s.host, 80),
+    ip: str(s.ip, 45),
+    lat: num(s.lat, -90, 90),
+    lon: num(s.lon, -180, 180),
+    org: str(s.org, 60),
+    city: str(s.city, 60),
+    country: str(s.country, 3),
+    type: ["edge", "site", "hop", "custom"].includes(s.type) ? s.type : "edge",
+  };
+  if (!out.host && out.name && HOST_RE.test(out.name)) out.host = out.name; // ip-only custom targets
+  if (!out.name) out.name = out.host;
+  const ok = out.name && out.host && HOST_RE.test(out.host) && isIP(out.ip) &&
+    out.lat != null && out.lon != null;
+  if (!ok) return null;
+  out.lat = +out.lat.toFixed(2); // ~city precision only
+  out.lon = +out.lon.toFixed(2);
+  return out;
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -60,114 +91,102 @@ export default {
     // Everything that isn't /api/* is the website itself (from ./public)
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
 
-    // Attach edge geo BEFORE entering the DO (cf data only exists here)
+    const stub = env.SPEED_DB.get(env.SPEED_DB.idFromName("global"));
+    const cf = request.cf || {};
+    const edgeGeo = () => {
+      const g = {
+        city: str(cf.city, 60), country: str(cf.country, 3),
+        lat: num(cf.latitude, -90, 90), lon: num(cf.longitude, -180, 180),
+      };
+      if (g.lat != null) g.lat = +g.lat.toFixed(2);
+      if (g.lon != null) g.lon = +g.lon.toFixed(2);
+      return g;
+    };
+
+    // -------- who am I: same-origin geo so the map can ALWAYS draw your lines --------
+    // (third-party locators get ad-blocked or rate-limited; the edge always knows)
+    if (url.pathname === "/api/whoami") {
+      const g = edgeGeo();
+      return json({ ...g, org: str(cf.asOrganization, 80) || "" });
+    }
+
+    // -------- results (geo attached HERE — request.cf only exists at the edge) --------
     if (request.method === "POST" && url.pathname === "/api/results") {
       let body;
       try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }
       const rec = sanitize(body);
       if (rec.down == null) return json({ error: "no data" }, 400);
-      const cf = request.cf || {};
-      rec.city = str(cf.city, 60);
-      rec.country = str(cf.country, 3);
-      rec.lat = num(cf.latitude, -90, 90);
-      rec.lon = num(cf.longitude, -180, 180);
-      if (rec.lat != null) rec.lat = +rec.lat.toFixed(2); // ~city precision only
-      if (rec.lon != null) rec.lon = +rec.lon.toFixed(2);
-
-      const stub = env.SPEED_DB.get(env.SPEED_DB.idFromName("global"));
+      Object.assign(rec, edgeGeo());
       return stub.fetch("https://do/store", { method: "POST", body: JSON.stringify(rec) });
-    }
-
-    const stub = env.SPEED_DB.get(env.SPEED_DB.idFromName("global"));
-    if (url.pathname === "/api/presence") {
-      if (request.method === "POST") {
-        let body = {}; try { body = await request.json(); } catch {}
-        const cf = request.cf || {};
-        const rec = {
-          ts: Date.now(), vpn: !!body.vpn,
-          city: str(cf.city, 60), country: str(cf.country, 3),
-          lat: num(cf.latitude, -90, 90), lon: num(cf.longitude, -180, 180),
-        };
-        if (rec.lat == null) return json({ ok: false });
-        rec.lat = +rec.lat.toFixed(2); rec.lon = +rec.lon.toFixed(2);
-        return stub.fetch("https://do/presence-post", { method: "POST", body: JSON.stringify(rec) });
-      }
-      return stub.fetch("https://do/presence-get");
-    }
-    if (url.pathname === "/api/origins") {
-      if (request.method === "POST") {
-        let b; try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
-        const o = { lat: num(b.lat, -90, 90), lon: num(b.lon, -180, 180),
-          city: str(b.city, 40), country: str(b.country, 3) };
-        if (o.lat == null || o.lon == null) return json({ error: "no geo" }, 400);
-        return stubOf(env).fetch("https://do/origins", { method: "POST", body: JSON.stringify(o) });
-      }
-      return stubOf(env).fetch("https://do/origins");
-    }
-    if (url.pathname === "/api/servers") {
-      if (request.method === "POST") {
-        let body;
-        try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }
-        const list = (Array.isArray(body.servers) ? body.servers : []).slice(0, 20)
-          .map((s) => ({
-            name: str(s.name, 30), host: str(s.host, 60), ip: str(s.ip, 45),
-            lat: num(s.lat, -90, 90), lon: num(s.lon, -180, 180),
-            org: str(s.org, 40), city: str(s.city, 40), country: str(s.country, 3),
-          }))
-          .filter((s) => s.host && /^[a-z0-9.-]+$/i.test(s.host) &&
-            s.ip && /^\d{1,3}(\.\d{1,3}){3}$/.test(s.ip) &&
-            s.lat != null && s.lon != null);
-        return stub.fetch("https://do/servers", { method: "POST", body: JSON.stringify(list) });
-      }
-      return stub.fetch("https://do/servers");
     }
     if (url.pathname.startsWith("/api/results/")) {
       const id = url.pathname.split("/")[3] || "";
       return stub.fetch("https://do/get?id=" + encodeURIComponent(id));
     }
+
     if (url.pathname === "/api/stats") {
       return stub.fetch("https://do/stats?range=" + (url.searchParams.get("range") || "24h"));
     }
-    if (url.pathname === "/api/presence") {
+
+    // -------- servers: ONE handler, accepts BOTH payload shapes the pages send --------
+    if (url.pathname === "/api/servers") {
       if (request.method === "POST") {
-        let body = {}; try { body = await request.json(); } catch {}
-        const cf = request.cf || {};
-        const rec = {
-          ts: Date.now(), vpn: !!body.vpn,
-          city: str(cf.city, 60), country: str(cf.country, 3),
-          lat: num(cf.latitude, -90, 90), lon: num(cf.longitude, -180, 180),
-        };
-        if (rec.lat == null) return json({ ok: false });
-        rec.lat = +rec.lat.toFixed(2); rec.lon = +rec.lon.toFixed(2);
-        return stub.fetch("https://do/presence-post", { method: "POST", body: JSON.stringify(rec) });
+        let body;
+        try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+        const raw = Array.isArray(body.servers) ? body.servers
+                  : Array.isArray(body.list)    ? body.list
+                  : [];
+        const list = raw.slice(0, 20).map(sanitizeServer).filter(Boolean);
+        if (!list.length) return json({ error: "no data" }, 400);
+        return stub.fetch("https://do/servers", { method: "POST", body: JSON.stringify(list) });
       }
-      return stub.fetch("https://do/presence-get");
+      return stub.fetch("https://do/servers");
     }
+
+    // -------- anonymous ping origins --------
     if (url.pathname === "/api/origins") {
       if (request.method === "POST") {
         let b; try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
         const o = { lat: num(b.lat, -90, 90), lon: num(b.lon, -180, 180),
           city: str(b.city, 40), country: str(b.country, 3) };
         if (o.lat == null || o.lon == null) return json({ error: "no geo" }, 400);
-        return stubOf(env).fetch("https://do/origins", { method: "POST", body: JSON.stringify(o) });
+        return stub.fetch("https://do/origins", { method: "POST", body: JSON.stringify(o) });
       }
-      return stubOf(env).fetch("https://do/origins");
+      return stub.fetch("https://do/origins");
     }
-    if (url.pathname === "/api/servers") {
+
+    // -------- map-visit presence (city-level footprint) --------
+    if (url.pathname === "/api/presence") {
       if (request.method === "POST") {
-        let body;
-        try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }
-        const list = (Array.isArray(body.list) ? body.list : []).slice(0, 12).map((s) => ({
-          name: str(s.name, 30), host: str(s.host, 60), ip: str(s.ip, 45),
-          lat: num(s.lat, -90, 90), lon: num(s.lon, -180, 180),
-          city: str(s.city, 60), country: str(s.country, 3), org: str(s.org, 60),
-          type: ["edge", "site", "hop"].includes(s.type) ? s.type : "edge",
-        })).filter((s) => s.name && s.ip && s.lat != null && s.lon != null);
-        if (!list.length) return json({ error: "no data" }, 400);
-        return stub.fetch("https://do/servers-post", { method: "POST", body: JSON.stringify(list) });
+        let body = {}; try { body = await request.json(); } catch {}
+        const rec = { ts: Date.now(), vpn: !!body.vpn, ...edgeGeo() };
+        if (rec.lat == null) return json({ ok: false });
+        return stub.fetch("https://do/presence-post", { method: "POST", body: JSON.stringify(rec) });
       }
-      return stub.fetch("https://do/servers-get");
+      return stub.fetch("https://do/presence-get");
     }
+
+    // -------- session log (device id + pinged targets — feeds access.html) --------
+    if (url.pathname === "/api/log") {
+      if (request.method === "POST") {
+        let b; try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+        const rec = {
+          ts: Date.now(),
+          did: str(b.did, 24) || "anon",
+          device: str(b.device, 80),
+          page: str(b.page, 20),
+          ...edgeGeo(),
+          targets: Array.isArray(b.targets) ? b.targets.slice(0, 60).map((t) => ({
+            host: str(t.host, 80), ip: str(t.ip, 45),
+            ping: num(t.ping, 0, 10000),
+            kind: ["server", "site", "custom"].includes(t.kind) ? t.kind : "server",
+          })).filter((t) => t.host) : [],
+        };
+        return stub.fetch("https://do/log-post", { method: "POST", body: JSON.stringify(rec) });
+      }
+      return stub.fetch("https://do/log-get");
+    }
+
     return json({ error: "not found" }, 404);
   },
 };
@@ -191,7 +210,7 @@ export class SpeedDB {
         lat: rec.lat, lon: rec.lon, down: rec.down, up: rec.up, ping: rec.ping,
         isp: rec.isp, vpn: rec.vpn ? 1 : 0,
       });
-      if (Math.random() < 0.02) await this.prune(); // occasional cleanup of >31d stat keys
+      if (Math.random() < 0.02) await this.prune(); // occasional cleanup
       return json({ id });
     }
 
@@ -222,8 +241,15 @@ export class SpeedDB {
           await this.storage.put("srv:" + s.host + "|" + s.ip, { ...s, ts: Date.now() });
         return json({ ok: true, stored: list.length });
       }
-      const all = await this.storage.list({ prefix: "srv:", limit: 1000 });
-      return json([...all.values()]); // edges stay on the map once recorded
+      // merge current keys with any legacy "s:"-prefixed edges from older builds
+      const [cur, legacy] = await Promise.all([
+        this.storage.list({ prefix: "srv:", limit: 2000 }),
+        this.storage.list({ prefix: "s:", limit: 1000 }),
+      ]);
+      const byKey = new Map();
+      for (const v of legacy.values()) if (v && v.host && v.ip) byKey.set(v.host + "|" + v.ip, v);
+      for (const v of cur.values()) if (v && v.host && v.ip) byKey.set(v.host + "|" + v.ip, v);
+      return json([...byKey.values()]); // edges stay on the map once recorded
     }
 
     if (url.pathname === "/presence-post") {
@@ -240,17 +266,14 @@ export class SpeedDB {
       return json([...l.values()].filter((r) => Math.floor(r.ts / 36e5) >= minSlot));
     }
 
-    if (url.pathname === "/servers-post") {
-      const list = JSON.parse(await request.text());
-      for (const s of list) {
-        s.lat = +s.lat.toFixed(2); s.lon = +s.lon.toFixed(2); // city precision
-        await this.storage.put("s:" + s.name + "|" + s.ip, { ...s, ts: Date.now() });
-      }
+    if (url.pathname === "/log-post") {
+      const rec = JSON.parse(await request.text());
+      await this.storage.put("log:" + String(rec.ts).padStart(14, "0") + ":" + rec.did, rec);
       return json({ ok: true });
     }
 
-    if (url.pathname === "/servers-get") {
-      const l = await this.storage.list({ prefix: "s:", limit: 2000 });
+    if (url.pathname === "/log-get") {
+      const l = await this.storage.list({ prefix: "log:", limit: 500, reverse: true });
       return json([...l.values()]);
     }
 
@@ -289,5 +312,9 @@ export class SpeedDB {
     const cutoff = "t:" + String(Date.now() - 2592e6 - 864e5).padStart(14, "0");
     const old = await this.storage.list({ prefix: "t:", end: cutoff, limit: 500 });
     if (old.size) await this.storage.delete([...old.keys()]);
+    // session logs older than 7 days go too
+    const logCut = "log:" + String(Date.now() - 6048e5).padStart(14, "0");
+    const oldLogs = await this.storage.list({ prefix: "log:", end: logCut, limit: 500 });
+    if (oldLogs.size) await this.storage.delete([...oldLogs.keys()]);
   }
 }

@@ -106,8 +106,36 @@
     background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);
     padding:6px 4px;cursor:pointer;}
   .ddtabs button.on{background:rgba(56,224,199,.14);color:var(--cyan);}
+  .clitem:hover{background:rgba(56,224,199,.06);border-radius:5px;}
   .ddnote{font-family:var(--mono);font-size:9.5px;color:var(--muted);line-height:1.6;
     padding:2px 2px 8px;border-bottom:1px solid var(--line-soft);margin-bottom:6px;}
+  .ddbar{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .ddbar #pingAll{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--cyan);
+    background:rgba(56,224,199,.12);border:1px solid var(--line);border-radius:6px;padding:6px;cursor:pointer;}
+  .ddbar .allchk{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--muted);cursor:pointer;}
+  .custombox{display:flex;gap:8px;margin:4px 0 10px;}
+  .custombox input{flex:1;min-width:0;font-family:var(--mono);font-size:13px;color:var(--ink);
+    background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:12px 12px;}
+  .custombox input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 10px rgba(56,224,199,.25);}
+  .custombox #custPing{font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.08em;color:var(--cyan);
+    background:rgba(56,224,199,.14);border:1px solid var(--cyan);border-radius:8px;padding:0 18px;cursor:pointer;}
+  /* ---- toggle switches (MY LINKS + check-all in dropdown lists) ---- */
+  .sw{position:relative;display:inline-block;width:30px;height:16px;flex:none;cursor:pointer;}
+  .sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;}
+  .sw i{position:absolute;inset:0;background:var(--chip);border:1px solid var(--line);border-radius:999px;transition:background .18s,border-color .18s;}
+  .sw i::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;
+    background:var(--muted);transition:left .18s,background .18s;}
+  .sw input:checked+i{background:rgba(56,224,199,.22);border-color:var(--cyan);}
+  .sw input:checked+i::after{left:16px;background:var(--cyan);box-shadow:0 0 6px var(--cyan);}
+  .sw.mag input:checked+i{background:rgba(255,63,164,.2);border-color:var(--magenta);}
+  .sw.mag input:checked+i::after{background:var(--magenta);box-shadow:0 0 6px var(--magenta);}
+  .lnkswitch{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;
+    letter-spacing:.06em;color:var(--magenta);padding:8px 14px;cursor:pointer;user-select:none;}
+  .swall{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--muted);cursor:pointer;user-select:none;}
+  /* ---- cluster list: clickable + selected instance highlighted in red ---- */
+  .clitem.sel{background:rgba(232,93,93,.14);outline:1px solid #E85D5D;border-radius:5px;}
+  #panel.hot{border-color:#E85D5D;box-shadow:0 0 28px rgba(232,93,93,.35);}
+  #panel.hot #pGlyph{color:#E85D5D !important;}
   #loadmsg{position:fixed;z-index:55;inset:0;display:flex;align-items:center;justify-content:center;
     font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:.2em;text-transform:uppercase;}
   @media(max-width:680px){ .sub{display:none;} #rail{width:250px;} #railToggle{display:block;} }
@@ -127,21 +155,11 @@
   <div class="seg" role="tablist" aria-label="Time range">
     <button data-r="24h" class="on">24 H</button><button data-r="7d">7 D</button><button data-r="30d">30 D</button>
   </div>
-  <div class="seg"><button id="lnkBtn" class="srv on">◆ MY LINKS: ON</button></div>
+  <div class="seg"><label class="lnkswitch" id="lnkWrap" title="show / hide your animated connection lines">◆ MY LINKS
+    <span class="sw mag"><input type="checkbox" id="lnkBtn" checked><i></i></span></label></div>
   <div class="dd">
     <div class="seg"><button id="srvDD">◇ SERVERS ▾</button></div>
-    <div class="ddlist" id="srvList" hidden>
-      <div class="ddtabs">
-        <button id="ddTabSrv" class="on">TEST SERVERS</button>
-        <button id="ddTabSites">SITE LINKS</button>
-      </div>
-      <div class="ddpane" id="ddSrv"></div>
-      <div class="ddpane" id="ddSites" style="display:none;">
-        <div class="shead" style="display:flex;gap:8px;font-family:var(--mono);font-size:8.5px;letter-spacing:.06em;color:var(--muted);padding:2px 0;"><span title="draw my live connection">PING</span><span title="pulse every known server, worldwide">LOCATE</span><span></span></div>
-        <div id="siteList"></div>
-        <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);border-top:1px solid var(--line-soft);margin-top:6px;padding-top:6px;line-height:1.5;">servers stay on the map forever once recorded — by you or any tester worldwide</div>
-      </div>
-    </div>
+    <div class="ddlist" id="srvList" hidden></div>
   </div>
   <div class="spacer"></div>
   <a class="back" href="./">← RUN A SPEED TEST</a>
@@ -232,13 +250,49 @@ const SITELINKS=["google.com","youtube.com","facebook.com","instagram.com","chat
 "spotify.com","canva.com","temu.com","ebay.com","openai.com","discord.com"];
 const SITEPAL=[0xF0A04B,0xE85D5D,0x5B8DEF,0xEF7BA8,0x2FC1C1,0xA78BFA,0x4FBF7A,0x58B7E8,0xB4C94A,0xFF3FA4,0xF0C04B,0x9AE66E];
 const SITESVCS=SITELINKS.map((d,i)=>({key:"site:"+d,name:d,host:d,hex:SITEPAL[i%SITEPAL.length],ping:null,site:true}));
-const ICON={user:"icons/user.png",vpn:"icons/vpn.png",server:"icons/server.png",hop:"icons/hop.png"};
+const ICON={user:"/icons/user.png",vpn:"/icons/vpn.png",server:"/icons/server.png",hop:"/icons/hop.png"};
+/* resilient resolution: A record first, AAAA (IPv6) as fallback; and if
+   dns.google is blocked (some networks/extensions do), cloudflare-dns takes over */
+const IP4_RE=/^\d{1,3}(\.\d{1,3}){3}$/,IP6_RE=/^[0-9a-f:]{2,45}$/i;
+const isIPv=v=>IP4_RE.test(v)||(v.includes(":")&&IP6_RE.test(v));
+async function dohQuery(host,type){
+  const qs=`name=${encodeURIComponent(host)}&type=${type}`;
+  for(const u of [`https://dns.google/resolve?${qs}`,
+                  `https://cloudflare-dns.com/dns-query?${qs}`]){
+    try{
+      const r=await fetch(u,{cache:"no-store",signal:AbortSignal.timeout(5000),
+        headers:{accept:"application/dns-json"}});
+      if(!r.ok)continue;
+      const j=await r.json();
+      const a=(j.Answer||[]).find(x=>x.type===(type==="A"?1:28));
+      if(a&&a.data)return a.data;
+    }catch{}
+  }
+  return null;
+}
+async function resolveIP(host){
+  if(isIPv(host))return host;                    // already an IP (v4 or v6)
+  return (await dohQuery(host,"A"))||(await dohQuery(host,"AAAA")); // IPv6 fallback
+}
+async function geoIP(ip){
+  try{
+    const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(g&&g.success!==false&&g.latitude!=null)
+      return{lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",
+        org:(g.connection&&g.connection.org)||""};
+  }catch{}
+  try{ // fallback geolocator — ipwho.is rate-limits under load
+    const g=await fetch(`https://ipapi.co/${ip}/json/`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(g&&g.latitude!=null)
+      return{lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",org:g.org||""};
+  }catch{}
+  return null;
+}
 /* VPN heuristic: consumer ISPs don't live in data centers. If the visitor's
    network org is a hosting/VPN company, they're almost certainly on a VPN. */
 const VPN_RE=/vpn|proxy|hosting|host(?:ed|ing)?\b|cloud|data ?cent|dedicated|colo|m247|ovh|hetzner|digital ?ocean|leaseweb|datacamp|packethub|proton|nordvpn|expressvpn|surfshark|mullvad|windscribe|vultr|linode|contabo|gcore|servers?\b/i;
 const looksVpn=org=>VPN_RE.test(String(org||""));
 let userVpn=false;
-const SITES=["google.com","youtube.com","facebook.com","instagram.com","chatgpt.com","reddit.com","wikipedia.org","x.com","pornhub.com","whatsapp.com","tiktok.com","xvideos.com","amazon.com","yahoo.com","bing.com","duckduckgo.com","yahoo.co.jp","xhamster.com","weather.com","linkedin.com","msn.com","netflix.com","temu.com","yandex.ru","microsoft.com","pinterest.com","live.com","twitch.tv","xnxx.com","github.com","claude.ai","spotify.com","canva.com","naver.com","imdb.com","paypal.com","apple.com","roblox.com","twitter.com","globo.com","vk.com","aliexpress.com","openai.com","dailymotion.com","nytimes.com","ebay.com","walmart.com","telegram.org","office.com","booking.com","gemini.google.com","baidu.com","bet.br","cloud.microsoft","bilibili.com","dzen.ru","news.yahoo.co.jp","fandom.com","mail.ru","samsung.com","discord.com","stripchat.com"];
 const hexCss=x=>"#"+x.toString(16).padStart(6,"0");
 const svcByHost=Object.fromEntries(SERVICES.concat(SITESVCS).map(s=>[s.host,s]));
 
@@ -268,6 +322,7 @@ const panel=$("panel");
 $("pClose").addEventListener("click",()=>panel.style.display="none");
 function showPanel(item,isServer){
   panel.classList.toggle("srv",!!isServer);
+  panel.classList.toggle("hot",!!item._fromCluster); // selected from the instance list below
   $("pGlyph").textContent=isServer?"◆":"◈";
   $("pGlyph").style.color=isServer?hexCss(item.hex||0xFF3FA4):speedColor(item.down||0);
   const rows=$("pRows");rows.innerHTML="";
@@ -303,7 +358,7 @@ function showPanel(item,isServer){
   }
   panel.style.display="block";
   if(!railOpen)setRail(true); // detail panels live in the rail — reveal it
-  if(item.lat!=null&&item.lon!=null)showCluster(item.lat,item.lon);
+  if(item.lat!=null&&item.lon!=null&&!item._fromCluster)showCluster(item.lat,item.lon);
 }
 
 /* ============ chart (amCharts 5 — animated lines, like the amcharts demo) ============ */
@@ -317,18 +372,33 @@ function makeTooltip(hex){
   t.label.setAll({fill:am5.color(0xD9F3EF),fontSize:12,fontFamily:"'IBM Plex Mono',monospace"});
   return t;
 }
+/* spin lifecycle: user touches the globe → spin pauses; 10 s later the globe
+   first RECENTERS itself (tilt back to the equator + zoom out, eased), and only
+   then resumes rotating FROM WHERE IT IS — starting the loop mid-tilt from a
+   stale rotation value was the visible "jump" glitch */
+let spinToken=0;
 function startSpin(){
   if(mode!=="3d")return;
   stopSpin();
-  chart.animate({key:"zoomLevel",to:1,duration:900}); // zoom back out for the cinematic spin
-  const from=chart.get("rotationX");
-  rotateAnim=chart.animate({key:"rotationX",from,to:from+360,duration:80000,loops:Infinity});
+  const token=++spinToken;
+  const ease=am5.ease.inOut(am5.ease.cubic);
+  const needY=Math.abs(chart.get("rotationY")||0)>.5;
+  const needZ=Math.abs((chart.get("zoomLevel")||1)-1)>.02;
+  const settle=(needY||needZ)?1150:0;
+  if(needY)chart.animate({key:"rotationY",to:0,duration:1100,easing:ease});
+  if(needZ)chart.animate({key:"zoomLevel",to:1,duration:1100,easing:ease});
+  const go=()=>{
+    if(token!==spinToken||mode!=="3d")return; // user grabbed it again meanwhile
+    const from=chart.get("rotationX");
+    rotateAnim=chart.animate({key:"rotationX",from,to:from+360,duration:80000,loops:Infinity});
+  };
+  settle?setTimeout(go,settle+50):go();
 }
-function stopSpin(){ if(rotateAnim){rotateAnim.stop();rotateAnim=null;} }
+function stopSpin(){ spinToken++; if(rotateAnim){rotateAnim.stop();rotateAnim=null;} }
 function pauseSpin(){
   if(mode!=="3d")return;
   stopSpin();clearTimeout(resumeTimer);
-  resumeTimer=setTimeout(startSpin,10000); // 10 s of no drag activity → resume
+  resumeTimer=setTimeout(startSpin,10000); // 10 s of no activity → recenter, then resume
 }
 function buildChart(){
   root=am5.Root.new("globediv");
@@ -445,6 +515,7 @@ function buildChart(){
 
   chart.chartContainer.get("background").events.on("pointerdown",pauseSpin);
   chart.chartContainer.events.on("pointerdown",pauseSpin); // any drag, anywhere on the map
+  chart.chartContainer.events.on("wheel",pauseSpin);       // wheel-zoom pauses the spin too
   poly.mapPolygons.template.events.on("pointerdown",pauseSpin);
   startSpin();
   chart.appear(800,100);
@@ -453,11 +524,44 @@ function setGlobePoints(){
   pointSeries.data.setAll(points.map(p=>({geometry:{type:"Point",coordinates:[p.lon,p.lat]},...p})));
 }
 
+/* ============ session logging (feeds the hidden access.html) ============ */
+function deviceId(){
+  try{let d=localStorage.getItem("cb_did");
+    if(!d){d=(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random()).replace(/-/g,"").slice(0,16);
+      localStorage.setItem("cb_did",d);}
+    return d;}catch{return "nostore";}
+}
+function deviceHint(){
+  const ua=navigator.userAgent,p=navigator.platform||"";
+  let os="Unknown";
+  if(/Windows/.test(ua))os="Windows";else if(/Android/.test(ua))os="Android";
+  else if(/iPhone|iPad|iPod/.test(ua))os="iOS";else if(/Mac/.test(ua))os="macOS";
+  else if(/Linux/.test(ua))os="Linux";
+  let br="browser";
+  if(/Edg\//.test(ua))br="Edge";else if(/Brave/.test(ua))br="Brave";
+  else if(/OPR\//.test(ua))br="Opera";else if(/Chrome/.test(ua))br="Chrome";
+  else if(/Firefox/.test(ua))br="Firefox";else if(/Safari/.test(ua))br="Safari";
+  return `${os} · ${br}${p?" · "+p:""}`;
+}
+function logSession(page){
+  try{
+    fetch("/api/log",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({did:deviceId(),device:deviceHint(),page,
+        targets:myEdges.map(e=>({host:e.host,ip:e.ip,ping:e.ping,
+          kind:String(e.svc).startsWith("site:")?"site":String(e.svc).startsWith("cust:")?"custom":"server"}))
+      })}).catch(()=>{});
+  }catch{}
+}
 /* ============ your live connections + global edge registry ============ */
 let userLoc=null,myEdges=[],edges=[];
 const conns={},svcItems={},svcChecked={};
 SERVICES.concat(SITESVCS,[OTHER]).forEach(s=>svcChecked[s.key]=true);
 async function detectUser(){
+  try{ // same-origin first: our own worker reads geo off the edge — can't be ad-blocked
+    const j=await fetch("/api/whoami",{cache:"no-store",signal:AbortSignal.timeout(6000)}).then(r=>r.json());
+    if(j&&j.lat!=null)return{lat:+j.lat,lon:+j.lon,org:j.org||"",
+      label:[j.city,j.country].filter(Boolean).join(", ")};
+  }catch{}
   try{
     const j=await fetch("https://speed.cloudflare.com/meta",{cache:"no-store",signal:AbortSignal.timeout(7000)}).then(r=>r.json());
     if(j.latitude!=null)return{lat:+j.latitude,lon:+j.longitude,org:j.asOrganization||"",
@@ -486,27 +590,24 @@ async function pingHost(urlFn){
 }
 async function loadEdge(svc){
   try{
-    const [dns,ping]=await Promise.all([
-      fetch(`https://dns.google/resolve?name=${svc.host}&type=A`,{cache:"no-store"}).then(r=>r.json()),
-      pingHost(svc.ping)
-    ]);
-    const ip=((dns.Answer||[]).find(x=>x.type===1)||{}).data;
+    const [ip,ping]=await Promise.all([resolveIP(svc.host),pingHost(svc.ping)]);
     if(!ip)return null;
-    const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
-    if(!g||g.success===false||g.latitude==null)return null;
+    const g=await geoIP(ip);
+    if(!g)return null;
     return{svc:svc.key,name:svc.name,hex:svc.hex,host:svc.host,ip,ping,mine:true,
-      lat:g.latitude,lon:g.longitude,org:(g.connection&&g.connection.org)||"",
-      city:g.city||"",country:g.country_code||""};
+      lat:g.lat,lon:g.lon,org:g.org,city:g.city,country:g.country,
+      type:svc.custom?"custom":(svc.site?"site":"edge")};
   }catch{return null;}
 }
 async function pingSiteMs(host){
   // cross-origin sites block CORS reads, but a no-cors fetch still measures
   // real connection time (DNS+TCP+TLS+first byte) — an honest ping estimate
+  const h=host.includes(":")&&!host.includes("]")?"["+host+"]":host; // IPv6 literals need brackets
   const t=[];
   for(let i=0;i<2;i++){
     const t0=performance.now();
     try{
-      await fetch("https://"+host+"/?cb="+Math.random(),
+      await fetch("https://"+h+"/?cb="+Math.random(),
         {mode:"no-cors",cache:"no-store",signal:AbortSignal.timeout(6000)});
       t.push(performance.now()-t0);
     }catch{}
@@ -514,15 +615,16 @@ async function pingSiteMs(host){
   return t.length?Math.round(Math.min(...t)):null;
 }
 function logEdges(list){
+  if(!list.length)return;
   fetch("/api/servers",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({servers:list.map(({name,host,ip,lat,lon,org,city,country})=>
-      ({name,host,ip,lat,lon,org,city,country}))})}).catch(()=>{});
+    body:JSON.stringify({servers:list.map(({name,host,ip,lat,lon,org,city,country,type})=>
+      ({name,host,ip,lat,lon,org,city,country,type:type||"edge"}))})}).catch(()=>{});
 }
 async function pingSite(svc,btn){
   if(btn){btn.disabled=true;btn.textContent="…";}
   const e=await loadEdge(svc);
   if(e){
-    e.ping=await pingSiteMs(svc.host);
+    if(svc.site!==false)e.ping=await pingSiteMs(svc.host);
     const k=e.host+"|"+e.ip;
     myEdges=myEdges.filter(x=>x.host+"|"+x.ip!==k);myEdges.push(e);
     edges=edges.filter(x=>x.host+"|"+x.ip!==k);edges.push(e);
@@ -629,11 +731,24 @@ function showCluster(lat,lon){
   rows.innerHTML="";
   const place=items.map(i=>i.e?.city||i.o?.city||i.p?.city).find(Boolean)||"this location";
   $("clTitle").textContent=`AT ${String(place).toUpperCase()} (${items.length} instances)`;
+  const select=(d,item,isServer)=>{ // highlight the picked instance + swap the panel above
+    rows.querySelectorAll(".clitem.sel").forEach(x=>x.classList.remove("sel"));
+    d.classList.add("sel");
+    showPanel({...item,_fromCluster:1},isServer);
+  };
   items.forEach(i=>{
-    const d=document.createElement("div");d.className="row lrow";
-    if(i.t==="edge")d.innerHTML=`<span class="dia" style="background:${hexCss(i.e.hex||0xFF3FA4)};color:${hexCss(i.e.hex||0xFF3FA4)}"></span><span>${i.e.name}<span style="color:var(--muted)"> · ${i.e.ip||i.e.host}</span></span>`;
-    else if(i.t==="origin")d.innerHTML=`<span class="dot" style="background:var(--cyan);color:var(--cyan)"></span><span>${i.o.n} tester${i.o.n===1?"":"s"} pinged from here${i.o.n>1?" (VPN exits land here too)":""}</span>`;
-    else d.innerHTML=`<span class="dot" style="background:${speedColor(i.p.down)};color:${speedColor(i.p.down)}"></span><span>${i.p.n||1} speed test${(i.p.n||1)===1?"":"s"} · avg ${fmt(i.p.down)} Mbps</span>`;
+    const d=document.createElement("div");d.className="row lrow clitem";
+    if(i.t==="edge"){
+      d.innerHTML=`<span class="dia" style="background:${hexCss(i.e.hex||0xFF3FA4)};color:${hexCss(i.e.hex||0xFF3FA4)}"></span><span>${i.e.name}<span style="color:var(--muted)"> · ${i.e.ip||i.e.host}</span></span>`;
+      d.style.cursor="pointer";
+      d.addEventListener("click",()=>select(d,i.e,true));
+    }else if(i.t==="origin"){
+      d.innerHTML=`<span class="dot" style="background:var(--cyan);color:var(--cyan)"></span><span>${i.o.n} tester${i.o.n===1?"":"s"} pinged from here${i.o.n>1?" (VPN exits land here too)":""}</span>`;
+    }else{
+      d.innerHTML=`<span class="dot" style="background:${speedColor(i.p.down)};color:${speedColor(i.p.down)}"></span><span>${i.p.n||1} speed test${(i.p.n||1)===1?"":"s"} · avg ${fmt(i.p.down)} Mbps</span>`;
+      d.style.cursor="pointer";
+      d.addEventListener("click",()=>select(d,i.p,false));
+    }
     rows.appendChild(d);
   });
   win.style.display="block";
@@ -655,12 +770,6 @@ function refreshLinks(){
     setDIVisible(c.ldi,on);setDIVisible(c.pdi,on);
     c.anim&&(on?c.anim.play():c.anim.pause());
   });
-  Object.entries(siteConns).forEach(([,c])=>{
-    setDIVisible(c.di,true); // server icons are PERMANENT map records — never hidden
-    const on=linksOn&&!!c.ping; // only MY line obeys the PING checkbox + MY LINKS
-    setDIVisible(c.ldi,on);setDIVisible(c.pdi,on);
-    c.anim&&(on?c.anim.play():c.anim.pause());
-  });
 }
 function setLinksVisible(){ refreshLinks(); }
 /* per-service visibility: diamond(s) + its animated link */
@@ -670,6 +779,43 @@ function applyService(key,on){
   refreshLinks();
 }
 let ddTab="servers";
+const customTargets=[]; // {key,name,host,hex,ping,site,custom}
+function normHost(v){
+  v=v.trim().replace(/^https?:\/\//i,"").replace(/\/.*$/,"");
+  if(v.startsWith("[")&&v.includes("]"))return v.slice(1,v.indexOf("]")); // [IPv6]:port
+  if(!isIPv(v))v=v.replace(/:\d+$/,""); // strip :port from hostnames, not from IPv6
+  return v;
+}
+function buildCustomTab(list){
+  const note=document.createElement("div");note.className="ddnote";
+  note.textContent="Enter any URL or IP and ping it. Its edge is geolocated and pinned on the map like any other — and shared with every tester once recorded.";
+  list.appendChild(note);
+  const box=document.createElement("div");box.className="custombox";
+  box.innerHTML=`<input id="custIn" placeholder="example.com or 1.2.3.4" autocomplete="off">
+    <button id="custPing">PING</button>`;
+  list.appendChild(box);
+  const go=async()=>{
+    const raw=box.querySelector("#custIn").value;const host=normHost(raw);
+    if(!host)return;
+    const btn=box.querySelector("#custPing");
+    let svc=customTargets.find(c=>c.host===host);
+    if(!svc){
+      svc={key:"cust:"+host,name:host,host,hex:0x9AE66E,site:true,custom:true,ping:null};
+      customTargets.push(svc);svcChecked[svc.key]=true;svcByHost[host]=svc;
+    }
+    const e=await pingSite(svc,btn);
+    if(e)box.querySelector("#custIn").value="";
+    buildServerDropdown();
+  };
+  box.querySelector("#custPing").addEventListener("click",ev=>{ev.stopPropagation();go();});
+  box.querySelector("#custIn").addEventListener("keydown",ev=>{if(ev.key==="Enter"){ev.stopPropagation();go();}});
+  box.querySelector("#custIn").addEventListener("click",ev=>ev.stopPropagation());
+  if(customTargets.length){
+    const hd=document.createElement("div");hd.className="ddnote";hd.style.borderTop="1px solid var(--line-soft)";
+    hd.style.paddingTop="8px";hd.textContent="Your custom targets:";list.appendChild(hd);
+    customTargets.forEach(s=>list.appendChild(ddRow(s)));
+  }
+}
 function ddRow(s){
   const n=(svcItems[s.key]||[]).length;
   const row=document.createElement("div");row.className="ddrow";
@@ -690,38 +836,54 @@ function ddRow(s){
 function buildServerDropdown(){
   const list=$("srvList");list.innerHTML="";
   const tabs=document.createElement("div");tabs.className="ddtabs";
-  [["servers","SERVERS"],["sites","SITE LINKS"]].forEach(([k,t])=>{
+  [["servers","SERVERS"],["sites","SITE LINKS"],["custom","CUSTOM"]].forEach(([k,t])=>{
     const b=document.createElement("button");
     b.textContent=t;b.classList.toggle("on",ddTab===k);
     b.addEventListener("click",e=>{e.stopPropagation();ddTab=k;buildServerDropdown();});
     tabs.appendChild(b);
   });
   list.appendChild(tabs);
+  const allSwitch=(group,label)=>{ // one switch checks / unchecks the whole list
+    const wrap=document.createElement("label");wrap.className="swall";
+    wrap.style.marginLeft="auto";
+    wrap.innerHTML=`${label} <span class="sw"><input type="checkbox"><i></i></span>`;
+    const cb=wrap.querySelector("input");
+    cb.checked=group.every(s=>svcChecked[s.key]!==false);
+    cb.addEventListener("change",e=>{e.stopPropagation();
+      group.forEach(s=>applyService(s.key,e.target.checked));buildServerDropdown();});
+    wrap.addEventListener("click",e=>e.stopPropagation());
+    return wrap;
+  };
   if(ddTab==="servers"){
-    SERVICES.concat(svcItems.other?[OTHER]:[]).forEach(s=>list.appendChild(ddRow(s)));
-  }else{
+    const grp=SERVICES.concat(svcItems.other?[OTHER]:[]);
+    const bar=document.createElement("div");bar.className="ddbar";
+    bar.appendChild(allSwitch(grp,"ALL"));
+    list.appendChild(bar);
+    grp.forEach(s=>list.appendChild(ddRow(s)));
+  }else if(ddTab==="sites"){
+    const bar=document.createElement("div");bar.className="ddbar";
+    const pa=document.createElement("button");pa.id="pingAll";pa.textContent="⚡ PING ALL";
+    bar.appendChild(pa);bar.appendChild(allSwitch(SITESVCS,"ALL"));
+    list.appendChild(bar);
     const note=document.createElement("div");note.className="ddnote";
     note.textContent="PING measures your live latency and pins the site's edge — it stays on the map for every tester once recorded.";
     list.appendChild(note);
     SITESVCS.forEach(s=>list.appendChild(ddRow(s)));
-  }
+    pa.addEventListener("click",async e=>{
+      e.stopPropagation();pa.disabled=true;pa.textContent="PINGING…";
+      for(const s of SITESVCS){const row=[...list.querySelectorAll(".ddrow")]
+        .find(r=>r.querySelector("label")?.textContent.trim().startsWith(s.name));
+        await pingSite(s,row?.querySelector(".pingbtn"));}
+      pa.disabled=false;pa.textContent="⚡ PING ALL";});
+  }else{ buildCustomTab(list); }
 }
 $("srvDD").addEventListener("click",e=>{
   if(e.target.closest("#srvList"))return; // clicks inside the panel don't close it
   e.stopPropagation();
   $("srvList").hidden=!$("srvList").hidden;
-  if(!$("srvList").hidden)refreshSiteCounts();
+  if(!$("srvList").hidden)buildServerDropdown(); // rebuild → fresh edge counts
 });
 $("srvList").addEventListener("click",e=>e.stopPropagation());
-function setDDTab(sites){
-  $("ddTabSrv").classList.toggle("on",!sites);
-  $("ddTabSites").classList.toggle("on",sites);
-  $("ddSrv").style.display=sites?"none":"block";
-  $("ddSites").style.display=sites?"block":"none";
-  if(sites)refreshSiteCounts();
-}
-$("ddTabSrv").addEventListener("click",()=>setDDTab(false));
-$("ddTabSites").addEventListener("click",()=>setDDTab(true));
 document.addEventListener("click",e=>{
   if(!$("srvList").hidden&&!e.target.closest(".dd"))$("srvList").hidden=true;
 });
@@ -778,10 +940,8 @@ document.querySelectorAll("[data-r]").forEach(b=>b.addEventListener("click",asyn
   points=await fetchData(range);setGlobePoints();updateStats(range);
 }));
 var linksOn=true;
-$("lnkBtn").addEventListener("click",()=>{
-  linksOn=!linksOn;
-  $("lnkBtn").classList.toggle("on",linksOn);
-  $("lnkBtn").textContent=linksOn?"◆ MY LINKS: ON":"◆ MY LINKS: OFF";
+$("lnkBtn").addEventListener("change",e=>{ // switch, not a button
+  linksOn=e.target.checked;
   refreshLinks();
 });
 
@@ -809,122 +969,6 @@ function showMyArea(){
     up:null,ping:null,n:0,isps:[]},false);               // no reports yet here
 }
 
-/* ============ site links (right rail) ============ */
-const siteCache={},siteConns={};
-async function resolveSite(dom){
-  if(siteCache[dom])return siteCache[dom];
-  const out={dom,ip:null,lat:null,lon:null,city:"",country:"",org:"",ping:null};
-  try{
-    const dns=await fetch(`https://dns.google/resolve?name=${dom}&type=A`,{cache:"no-store"}).then(r=>r.json());
-    out.ip=(((dns.Answer||[]).find(x=>x.type===1))||{}).data||null;
-    if(out.ip){
-      const g=await fetch(`https://ipwho.is/${out.ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
-      if(g&&g.success!==false&&g.latitude!=null){
-        out.lat=g.latitude;out.lon=g.longitude;out.city=g.city||"";
-        out.country=g.country_code||"";out.org=(g.connection&&g.connection.org)||"";
-      }
-    }
-  }catch{}
-  // latency via opaque no-cors fetch: cross-site pages can't be read,
-  // but the round-trip (DNS+TCP+TLS+TTFB) still times accurately
-  const t=[];
-  for(let i=0;i<2;i++){
-    const t0=performance.now();
-    try{
-      await fetch("https://"+dom+"/?cb="+Math.random(),{mode:"no-cors",cache:"no-store",
-        signal:AbortSignal.timeout(6000)});
-      t.push(performance.now()-t0);
-    }catch{}
-  }
-  out.ping=t.length?Math.round(Math.min(...t)):null;
-  siteCache[dom]=out;
-  if(out.ip&&out.lat!=null) // register globally so everyone sees this site's edge
-    fetch("/api/servers",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({list:[{name:dom,host:dom,ip:out.ip,lat:out.lat,lon:out.lon,
-        city:out.city,country:out.country,org:out.org,type:"site"}]}),
-      signal:AbortSignal.timeout(6000)}).catch(()=>{});
-  return out;
-}
-function findSiteDIs(dom){
-  return serverSeries.dataItems.filter(di=>{
-    const d=di.dataContext||{};
-    return d.name===dom||d.host===dom;
-  });
-}
-async function ensureSitePoint(dom,msEl){
-  if(siteConns[dom])return siteConns[dom];
-  if(msEl)msEl.textContent="…";
-  const s=await resolveSite(dom);
-  if(msEl)msEl.textContent=s.ping!=null?s.ping+" ms":"✕";
-  if(s.lat==null){if(msEl)msEl.title="couldn't geolocate this site";return null;}
-  // data.push sets dataContext — pushDataItem does NOT, and a bullet factory
-  // reading undefined dataContext throws inside the render loop and freezes
-  // the whole chart (the "map hangs" bug)
-  serverSeries.data.push({geometry:{type:"Point",coordinates:[s.lon,s.lat]},
-    name:dom,host:dom,ip:s.ip,ping:s.ping,city:s.city,country:s.country,org:s.org,
-    type:"site",svc:"site",hex:0x58B7E8,mine:true});
-  const di=serverSeries.dataItems[serverSeries.dataItems.length-1];
-  const c={di,checked:true};
-  if(userLoc){
-    const grp=lineSeriesByColor[s.ping!=null?pingHex(s.ping):0xE85D5D];
-    if(grp){
-      c.ldi=grp.lines.pushDataItem({geometry:{type:"LineString",
-        coordinates:[[userLoc.lon,userLoc.lat],[s.lon,s.lat]]}});
-      c.pdi=grp.packets.pushDataItem({lineDataItem:c.ldi,positionOnLine:0});
-      c.anim=c.pdi.animate({key:"positionOnLine",from:0,to:1,
-        duration:Math.max(1100,Math.min(4200,(s.ping??150)*22)),
-        loops:Infinity,easing:am5.ease.inOut(am5.ease.quad)});
-    }
-  }
-  siteConns[dom]=c;
-  refreshLinks();
-  return c;
-}
-async function togglePing(dom,on,msEl){
-  const c=siteConns[dom]||(on?await ensureSitePoint(dom,msEl):null);
-  if(c){ c.ping=on; refreshLinks(); }
-}
-/* LOCATE: pulse EVERY known server of this URL worldwide — including edges
-   recorded by testers in other countries or behind other VPN exits */
-const locatePulses={};
-async function toggleLocate(dom,on,msEl){
-  if(!on){
-    (locatePulses[dom]||[]).forEach(p=>{p.anim.stop();p.sprite.setAll({scale:1,opacity:p.op});});
-    delete locatePulses[dom];
-    return;
-  }
-  let dis=findSiteDIs(dom);
-  if(!dis.length){ await ensureSitePoint(dom,msEl); dis=findSiteDIs(dom); }
-  locatePulses[dom]=[];
-  dis.forEach(di=>(di.bullets||[]).forEach(b=>{
-    const sprite=b.get("sprite"); if(!sprite)return;
-    sprite.setAll({centerX:am5.p50,centerY:am5.p50});
-    const anim=sprite.animate({key:"scale",from:1,to:1.7,duration:650,
-      loops:Infinity,easing:am5.ease.yoyo(am5.ease.cubic)});
-    locatePulses[dom].push({anim,sprite,op:sprite.get("opacity",1)});
-  }));
-}
-function refreshSiteCounts(){
-  document.querySelectorAll("#siteList label").forEach(l=>{
-    const dom=l.querySelector(".dom").textContent;
-    const n=findSiteDIs(dom).length;
-    l.querySelector(".ecount").textContent=n?`${n} edge${n===1?"":"s"}`:"";
-  });
-}
-function buildSiteList(){
-  const list=$("siteList");list.innerHTML="";
-  SITES.forEach(dom=>{
-    const l=document.createElement("label");
-    l.innerHTML=`<input type="checkbox" class="cbp" title="ping — draw my live connection">
-      <input type="checkbox" class="cbl" title="locate — heartbeat every known server of ${dom}">
-      <span class="dom">${dom}</span><span class="ms">—</span><span class="host ecount"></span>`;
-    const ms=l.querySelector(".ms");
-    l.querySelector(".cbp").addEventListener("change",e=>togglePing(dom,e.target.checked,ms));
-    l.querySelector(".cbl").addEventListener("change",e=>toggleLocate(dom,e.target.checked,ms));
-    list.appendChild(l);
-  });
-}
-
 /* ============ visitor presence: map opens are recorded too ============ */
 async function logAndLoadPresence(){
   try{
@@ -947,19 +991,22 @@ async function logAndLoadPresence(){
   points=await fetchData(range);
   setGlobePoints();updateStats(range);
   $("loadmsg").remove();
-  // locate user + geolocate servers + measure real pings, then animate the links
-  const [u,...mine]=await Promise.all([detectUser(),...SERVICES.map(loadEdge)]);
+  // locate user + geolocate servers + measure real pings, then animate the links.
+  // every step is guarded: on a flaky network one failed lookup must not take
+  // the icons, lines, or presence markers down with it (the old boot did)
+  const T=async fn=>{try{return await fn();}catch(e){console.warn("boot step:",e);return null;}};
+  const [u,...mine]=await Promise.all([T(detectUser),...SERVICES.map(s=>T(()=>loadEdge(s)))]);
   userLoc=u;myEdges=mine.filter(Boolean);
   userVpn=looksVpn(userLoc&&userLoc.org);
-  await shareAndFetchEdges();   // log my edges globally, pull everyone else's
-  setGlobeServers();
-  drawConnections();
-  await loadOrigins();          // anonymous "pinged from here" markers
-  buildLocIndex();
-  buildServerDropdown();
-  buildSiteList();
-  logAndLoadPresence();
-  refreshLinks();
+  await T(shareAndFetchEdges);  // log my edges globally, pull everyone else's
+  T(()=>setGlobeServers());
+  T(()=>drawConnections());
+  await T(loadOrigins);         // anonymous "pinged from here" markers
+  T(()=>buildLocIndex());
+  T(()=>buildServerDropdown());
+  T(()=>logSession("map"));
+  T(logAndLoadPresence);
+  T(()=>refreshLinks());
 })();
 })();
 </script>

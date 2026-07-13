@@ -33,6 +33,30 @@ Workers" template) and save it as the GitHub repo secret **CLOUDFLARE_API_TOKEN*
 
 Local preview: `npm run dev` → http://localhost:8787 (site + API together).
 
+## What's new in this build
+
+- **Worker cleaned up**: the duplicated `/api/presence` / `/api/origins` /
+  `/api/servers` route blocks are gone. `/api/servers` now accepts BOTH payload
+  shapes the pages send (`{servers:[…]}` and `{list:[…]}`), keeps the `type`
+  field (edge / site / hop / custom), accepts IPv6, and merges legacy `s:` keys.
+- **`GET /api/whoami`**: same-origin visitor geo from the edge — the map uses it
+  first, so connection lines draw even when third-party locators are ad-blocked.
+- **`POST/GET /api/log`**: anonymous session log (device id + pinged targets),
+  pruned after 7 days — ready for access.html.
+- **IPv6 fallback**: if a host has no A record (or IPv4 lookup is blocked), the
+  pages retry with AAAA; dns.google falls back to cloudflare-dns; ipwho.is falls
+  back to ipapi.co.
+- **CUSTOM target ping** on both pages: index.html gets a CUSTOM tab (centered
+  tab pills) with a large URL/IP bar; map.html gets a CUSTOM tab in the ◇ SERVERS
+  dropdown. Custom edges are pinned on everyone's map with `type:"custom"`.
+- **MY LINKS is a switch**, and both dropdown lists (SERVERS / SITE LINKS) have a
+  check-all switch.
+- **Globe spin fixed**: touching or wheel-zooming pauses the spin; on resume the
+  globe first re-centers (tilt → equator, zoom → 1, eased) and only then rotates
+  on from its current position — no more jump.
+- **Cluster instances are clickable**: picking one highlights it in red and swaps
+  the red-bordered detail panel above.
+
 ## The map (Global connection telemetry)
 
 - amCharts 5 chart, cyberpunk-styled: 3D rotating globe (drag to spin, auto-spin

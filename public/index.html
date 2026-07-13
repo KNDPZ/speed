@@ -162,11 +162,38 @@ Also create /ads.txt in the repo root: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT,
 
   /* ---------- source board ---------- */
   .board{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 18px 6px;margin-bottom:18px;box-shadow:var(--shadow);}
-  .board-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
+  /* 3-zone grid: title | tabs | hint — the tabs stay CENTERED no matter which
+     tab is active or how wide the hint text is (flex space-between let them drift) */
+  .board-head{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin-bottom:10px;}
+  .board-head h2{justify-self:start;}
+  .board-head .tabs{justify-self:center;}
+  .board-head>span{justify-self:end;text-align:right;}
+  @media(max-width:720px){
+    .board-head{grid-template-columns:1fr;justify-items:center;row-gap:8px;}
+    .board-head h2{justify-self:center;}
+    .board-head>span{justify-self:center;text-align:center;}
+  }
   .tabs{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;}
   .tabs button{font-family:var(--mono);font-size:11px;letter-spacing:.06em;background:none;
     border:none;color:var(--muted);padding:7px 14px;cursor:pointer;}
   .tabs button.on{background:var(--chip);color:var(--accent,var(--blue));}
+  /* ---------- custom target tab ---------- */
+  .cust-controls{display:flex;gap:10px;align-items:center;margin:4px 0 12px;}
+  .cust-controls input{flex:1;min-width:0;font-family:var(--mono);font-size:14px;color:var(--ink);
+    background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:13px 14px;}
+  .cust-controls input:focus{outline:none;border-color:var(--accent,var(--blue));}
+  .cust-controls button{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;cursor:pointer;
+    background:var(--chip);border:1px solid var(--accent,var(--blue));color:var(--accent,var(--blue));
+    border-radius:10px;padding:13px 22px;}
+  .cust-controls button:disabled{opacity:.5;cursor:default;}
+  .cust-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:10px;line-height:1.5;}
+  .crow{display:grid;grid-template-columns:minmax(140px,1.4fr) 1fr auto auto;gap:10px;align-items:center;
+    font-family:var(--mono);font-size:12px;padding:9px 4px;border-top:1px solid var(--line);}
+  .crow .chost{color:var(--ink);font-weight:600;overflow-wrap:anywhere;}
+  .crow .cip{color:var(--muted);overflow-wrap:anywhere;}
+  .crow .cping{font-weight:700;text-align:right;}
+  .crow .cloc{color:var(--muted);text-align:right;}
+  @media(max-width:640px){.crow{grid-template-columns:1fr auto;} .crow .cip,.crow .cloc{display:none;}}
   .site-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0 10px;}
   .site-controls button{font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer;
     background:var(--chip);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:7px 14px;}
@@ -354,8 +381,19 @@ Also create /ads.txt in the repo root: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT,
       <div class="tabs" role="tablist">
         <button id="tabSrc" class="on">SOURCES</button>
         <button id="tabSites">POPULAR SITES</button>
+        <button id="tabCust">CUSTOM</button>
       </div>
       <span id="boardHint">live bar: log scale · Mbps</span>
+    </div>
+    <div id="custTab" style="display:none;">
+      <div class="cust-controls">
+        <input id="custIn" placeholder="example.com or 1.2.3.4" autocomplete="off" spellcheck="false"
+          aria-label="Custom URL or IP to ping">
+        <button id="custPing">PING</button>
+      </div>
+      <div class="cust-hint">enter any URL or IP and measure your latency to it — its edge is geolocated,
+        pinned on the <a href="map.html">global map</a>, and shared with every tester once recorded</div>
+      <div id="custRows"></div>
     </div>
     <div id="siteTab" style="display:none;">
       <div class="site-controls">
@@ -590,9 +628,15 @@ async function detectIdentity(){
 /* ================= server IPs via DNS-over-HTTPS ================= */
 async function resolveOne(s){
   try{
-    const r=await fetch(`https://dns.google/resolve?name=${s.host}&type=A`,{cache:"no-store"});
-    const j=await r.json();
-    const a=(j.Answer||[]).filter(x=>x.type===1).map(x=>x.data);
+    let a=[];
+    try{
+      const j=await fetch(`https://dns.google/resolve?name=${s.host}&type=A`,{cache:"no-store"}).then(r=>r.json());
+      a=(j.Answer||[]).filter(x=>x.type===1).map(x=>x.data);
+    }catch{}
+    if(!a.length){ // IPv4 dropped/blocked → fall back to IPv6 (AAAA)
+      const v6=await dohQuery(s.host,"AAAA");
+      if(v6)a=[v6];
+    }
     lane[s.id].ip.textContent = a.length ? a[0]+(a.length>1?` +${a.length-1}`:"") : "n/a";
     lane[s.id].ip.title = a.join("\n");
   }catch{ lane[s.id].ip.textContent="n/a"; }
@@ -886,29 +930,69 @@ POP_SITES.forEach(dom=>{
 async function pingSite(dom){
   // opaque no-cors round-trip: response bodies are unreadable cross-site,
   // but DNS+TCP+TLS+TTFB timing is real — this is latency, not bandwidth
+  const h=dom.includes(":")&&!dom.includes("]")?"["+dom+"]":dom; // IPv6 literals need brackets
   const t=[];
   for(let i=0;i<2;i++){
     const t0=performance.now();
     try{
-      await fetch("https://"+dom+"/?cb="+Math.random(),{mode:"no-cors",cache:"no-store",
+      await fetch("https://"+h+"/?cb="+Math.random(),{mode:"no-cors",cache:"no-store",
         signal:AbortSignal.timeout(6000)});
       t.push(performance.now()-t0);
     }catch{}
   }
   return t.length?Math.round(Math.min(...t)):null;
 }
-function registerSite(dom){
+/* resilient resolution — shared by popular sites + custom targets:
+   A record first, AAAA (IPv6) as fallback; dns.google → cloudflare-dns fallback */
+const IP4_RE=/^\d{1,3}(\.\d{1,3}){3}$/,IP6_RE=/^[0-9a-f:]{2,45}$/i;
+const isIPv=v=>IP4_RE.test(v)||(v.includes(":")&&IP6_RE.test(v));
+async function dohQuery(host,type){
+  const qs=`name=${encodeURIComponent(host)}&type=${type}`;
+  for(const u of [`https://dns.google/resolve?${qs}`,
+                  `https://cloudflare-dns.com/dns-query?${qs}`]){
+    try{
+      const r=await fetch(u,{cache:"no-store",signal:AbortSignal.timeout(5000),
+        headers:{accept:"application/dns-json"}});
+      if(!r.ok)continue;
+      const j=await r.json();
+      const a=(j.Answer||[]).find(x=>x.type===(type==="A"?1:28));
+      if(a&&a.data)return a.data;
+    }catch{}
+  }
+  return null;
+}
+async function resolveIP(host){
+  if(isIPv(host))return host;
+  return (await dohQuery(host,"A"))||(await dohQuery(host,"AAAA")); // IPv6 fallback
+}
+async function geoIP(ip){
+  try{
+    const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(g&&g.success!==false&&g.latitude!=null)
+      return{lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",
+        org:(g.connection&&g.connection.org)||""};
+  }catch{}
+  try{ // fallback geolocator — ipwho.is rate-limits under load
+    const g=await fetch(`https://ipapi.co/${ip}/json/`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
+    if(g&&g.latitude!=null)
+      return{lat:g.latitude,lon:g.longitude,city:g.city||"",country:g.country_code||"",org:g.org||""};
+  }catch{}
+  return null;
+}
+async function resolveTarget(host){ // ip + geo, or null
+  const ip=await resolveIP(host); if(!ip)return null;
+  const g=await geoIP(ip); if(!g)return null;
+  return{ip,...g};
+}
+function registerSite(dom,type="site"){
   // put this site's edge on the global map (DNS → geo → /api/servers)
   if(siteRegistered.has(dom))return; siteRegistered.add(dom);
   (async()=>{try{
-    const dns=await fetch(`https://dns.google/resolve?name=${dom}&type=A`,{cache:"no-store"}).then(r=>r.json());
-    const ip=(((dns.Answer||[]).find(x=>x.type===1))||{}).data; if(!ip)return;
-    const g=await fetch(`https://ipwho.is/${ip}`,{signal:AbortSignal.timeout(7000)}).then(r=>r.json());
-    if(!g||g.success===false||g.latitude==null)return;
+    const t=await resolveTarget(dom); if(!t)return;
     fetch("/api/servers",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({list:[{name:dom,host:dom,ip,lat:g.latitude,lon:g.longitude,
-        city:g.city||"",country:g.country_code||"",org:(g.connection&&g.connection.org)||"",
-        type:"site"}]}),signal:AbortSignal.timeout(6000)}).catch(()=>{});
+      body:JSON.stringify({list:[{name:dom,host:dom,ip:t.ip,lat:t.lat,lon:t.lon,
+        city:t.city,country:t.country,org:t.org,type}]}),
+      signal:AbortSignal.timeout(6000)}).catch(()=>{});
   }catch{}})();
 }
 var pingBusy=false;
@@ -939,15 +1023,50 @@ $("pingSel").addEventListener("click",()=>pingSites(POP_SITES.filter(d=>siteEls[
 $("selAll").addEventListener("click",()=>POP_SITES.forEach(d=>siteEls[d].cb.checked=true));
 $("selNone").addEventListener("click",()=>POP_SITES.forEach(d=>siteEls[d].cb.checked=false));
 
-function setBoardTab(sites){
-  $("tabSrc").classList.toggle("on",!sites);
-  $("tabSites").classList.toggle("on",sites);
-  $("srcTab").style.display=sites?"none":"block";
-  $("siteTab").style.display=sites?"block":"none";
-  $("boardHint").textContent=sites?"HTTPS round-trip latency · not bandwidth":"live bar: log scale · Mbps";
+function setBoardTab(tab){ // "src" | "sites" | "cust"
+  $("tabSrc").classList.toggle("on",tab==="src");
+  $("tabSites").classList.toggle("on",tab==="sites");
+  $("tabCust").classList.toggle("on",tab==="cust");
+  $("srcTab").style.display=tab==="src"?"block":"none";
+  $("siteTab").style.display=tab==="sites"?"block":"none";
+  $("custTab").style.display=tab==="cust"?"block":"none";
+  $("boardHint").textContent=tab==="src"?"live bar: log scale · Mbps":"HTTPS round-trip latency · not bandwidth";
+  if(tab==="cust")$("custIn").focus();
 }
-$("tabSrc").addEventListener("click",()=>setBoardTab(false));
-$("tabSites").addEventListener("click",()=>setBoardTab(true));
+$("tabSrc").addEventListener("click",()=>setBoardTab("src"));
+$("tabSites").addEventListener("click",()=>setBoardTab("sites"));
+$("tabCust").addEventListener("click",()=>setBoardTab("cust"));
+
+/* ================= custom target tab ================= */
+function normHost(v){
+  v=v.trim().replace(/^https?:\/\//i,"").replace(/\/.*$/,"");
+  if(v.startsWith("[")&&v.includes("]"))return v.slice(1,v.indexOf("]")); // [IPv6]:port
+  if(!isIPv(v))v=v.replace(/:\d+$/,""); // strip :port from hostnames, not from IPv6
+  return v;
+}
+const custDone={};
+async function pingCustom(){
+  const host=normHost($("custIn").value);
+  if(!host||!/^[a-z0-9.:\-]+$/i.test(host))return;
+  const btn=$("custPing");btn.disabled=true;btn.textContent="…";
+  let row=custDone[host];
+  if(!row){
+    row=document.createElement("div");row.className="crow";
+    row.innerHTML=`<span class="chost">${host}</span><span class="cip">resolving…</span>
+      <span class="cping">—</span><span class="cloc"></span>`;
+    $("custRows").prepend(row);custDone[host]=row;
+  }
+  const [ping,t]=await Promise.all([pingSite(host),resolveTarget(host)]);
+  row.querySelector(".cip").textContent=t?t.ip:"unresolved";
+  row.querySelector(".cping").textContent=ping!=null?ping+" ms":"✕";
+  row.querySelector(".cping").style.color=ping==null?"var(--grade-poor)":ping<100?"var(--grade-exc)":ping<250?"var(--grade-fair)":"var(--grade-poor)";
+  row.querySelector(".cloc").textContent=t?[t.city,t.country].filter(Boolean).join(", "):"";
+  if(t)registerSite(host,"custom"); // pin it on everyone's map
+  btn.disabled=false;btn.textContent="PING";
+  $("custIn").value="";$("custIn").focus();
+}
+$("custPing").addEventListener("click",pingCustom);
+$("custIn").addEventListener("keydown",e=>{if(e.key==="Enter")pingCustom();});
 
 /* ================= share system ================= */
 let lastResult=null;
