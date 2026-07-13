@@ -120,13 +120,15 @@
   .custombox #custPing{font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.08em;color:var(--cyan);
     background:rgba(56,224,199,.14);border:1px solid var(--cyan);border-radius:8px;padding:0 18px;cursor:pointer;}
   /* ---- server search + locate ---- */
-  .srch{display:flex;align-items:center;gap:6px;padding:4px 6px;}
-  .srch input{width:172px;font-family:var(--mono);font-size:11px;color:var(--ink);
-    background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:7px 9px;}
-  .srch input:focus{outline:none;border-color:var(--cyan);}
+  .srch{display:flex;align-items:stretch;gap:0;padding:0;}
+  .srch input{width:176px;font-family:var(--mono);font-size:11px;color:var(--ink);
+    background:none;border:none;padding:8px 12px;} /* no box — it IS the pill */
+  .srch input:focus{outline:none;}
+  .srch input::placeholder{color:var(--muted);}
   .srch button{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.08em;color:var(--cyan);
-    background:rgba(56,224,199,.12);border:1px solid var(--line);border-radius:6px;padding:7px 12px;cursor:pointer;white-space:nowrap;}
-  .srch button:hover{border-color:var(--cyan);}
+    background:rgba(56,224,199,.12);border:none;border-left:1px solid var(--line);
+    padding:8px 14px;cursor:pointer;white-space:nowrap;}
+  .srch button:hover{background:rgba(56,224,199,.22);}
   @media(max-width:900px){.srch input{width:120px;}}
   /* ---- recently mapped window (right side) ---- */
   #recentWin{position:fixed;z-index:70;right:18px;top:74px;width:248px;max-height:46vh;display:flex;flex-direction:column;
@@ -153,6 +155,10 @@
   .clsrv{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--cyan);
     border-top:1px solid var(--line-soft);margin-top:6px;padding:6px 0 2px;}
   .clsrv:first-child{border-top:none;margin-top:0;}
+  .infoi{display:inline-flex;width:12px;height:12px;border:1px solid var(--muted);border-radius:50%;
+    align-items:center;justify-content:center;font-size:8px;line-height:1;color:var(--muted);
+    font-style:normal;font-family:var(--mono);cursor:help;flex:none;}
+  .infoi:hover{border-color:var(--cyan);color:var(--cyan);}
   /* ---- density heat toggle ---- */
   #heatBtn.on{background:rgba(154,230,110,.14);color:#9AE66E;}
   /* ---- toggle switches (MY LINKS + check-all in dropdown lists) ---- */
@@ -755,6 +761,7 @@ async function pingSite(svc,btn){
     myEdges=myEdges.filter(x=>x.host+"|"+x.ip!==k);myEdges.push(e);
     edges=edges.filter(x=>x.host+"|"+x.ip!==k);edges.push(e);
     logEdges([e]);          // persists globally — stays on everyone's map
+    markMapped(e);          // recent log: first-time host+ip records only
     setGlobeServers();
     addLink(e);
     buildLocIndex();
@@ -780,6 +787,15 @@ async function shareAndFetchEdges(){
         hex:svc.hex,mine:false,ping:null};
     });
   edges=[...myEdges,...extra];
+  // the recent log wants FIRST-TIME records only — my session restamps ts on
+  // every load, so track the server-side list (which carries firstTs) separately
+  const byKey=new Map();
+  (Array.isArray(remote)?remote:[]).forEach(e=>{
+    if(e&&e.host&&e.ip&&e.lat!=null)byKey.set(e.host+"|"+e.ip,e);
+  });
+  myEdges.forEach(e=>{ const k=e.host+"|"+e.ip;
+    if(!byKey.has(k))byKey.set(k,{...e,firstTs:e.ts}); }); // genuinely never mapped before
+  recentRecords=[...byKey.values()];
 }
 /* stacked geo-centroids make icons unclickable at ANY zoom (two servers "in
    Quezon City" render 0px apart) — merge everything within one ~0.3° cell
@@ -1041,11 +1057,22 @@ function buildServerDropdown(){
     return wrap;
   };
   if(ddTab==="servers"){
-    const grp=SERVICES.concat(svcItems.other?[OTHER]:[]);
     const bar=document.createElement("div");bar.className="ddbar";
-    bar.appendChild(allSwitch(grp,"ALL"));
+    bar.appendChild(allSwitch(SERVICES,"ALL"));
     list.appendChild(bar);
-    grp.forEach(s=>list.appendChild(ddRow(s)));
+    if(svcItems.other){ // custom/site edges mapped by testers — one switch, no row
+      const ob=document.createElement("div");ob.className="ddbar";
+      const wrap=document.createElement("label");wrap.className="swall";
+      wrap.style.marginLeft="auto";
+      wrap.innerHTML=`OTHER EDGES <i class="infoi" title="custom URLs and site edges mapped by testers worldwide — switch off to hide them all from the map">i</i> <span class="sw"><input type="checkbox"><i></i></span>`;
+      const cb=wrap.querySelector("input");
+      cb.checked=svcChecked.other!==false;
+      cb.addEventListener("change",ev=>{ev.stopPropagation();applyService("other",ev.target.checked);});
+      wrap.addEventListener("click",ev=>ev.stopPropagation());
+      ob.appendChild(wrap);
+      list.appendChild(ob);
+    }
+    SERVICES.forEach(s=>list.appendChild(ddRow(s)));
   }else if(ddTab==="sites"){
     const bar=document.createElement("div");bar.className="ddbar";
     const pa=document.createElement("button");pa.id="pingAll";pa.textContent="⚡ PING ALL";
@@ -1175,8 +1202,13 @@ async function locateServers(){
 }
 $("srvLocate").addEventListener("click",locateServers);
 $("srvSearch").addEventListener("keydown",e=>{if(e.key==="Enter")locateServers();});
-$("srvSearch").addEventListener("input",()=>{ // typing turns the log window's results down
-  if(focusOwner==="log")setFocusOwner("search");
+$("srvSearch").addEventListener("input",()=>{
+  if(!$("srvSearch").value.trim()){ // emptied → the map goes quiet again
+    clearBeats();focusOwner=null;
+    $("recentWin").classList.remove("dimmed");$("srchSeg").classList.remove("dimmed");
+    return;
+  }
+  if(focusOwner==="log")setFocusOwner("search"); // typing turns the log's results down
 });
 
 /* ============ recently mapped servers (right window) ============ */
@@ -1186,14 +1218,20 @@ function timeAgo(ts){
   if(m<60)return m+"m ago"; const h=Math.round(m/60);
   if(h<48)return h+"h ago"; return Math.round(h/24)+"d ago";
 }
+let recentRecords=[];
+function markMapped(e){ // a fresh ping recorded something new → it enters the log
+  const k=e.host+"|"+e.ip;
+  if(recentRecords.some(r=>r.host+"|"+r.ip===k))return; // host+ip seen → not new
+  recentRecords.push({...e,firstTs:Date.now()});
+}
 function buildRecentLog(){
   const list=$("recentList");list.innerHTML="";
-  const recent=[...edges].filter(e=>e&&e.ts&&e.lat!=null)
-    .sort((a,b)=>b.ts-a.ts).slice(0,12);
+  const recent=[...recentRecords].filter(e=>e&&e.lat!=null)
+    .sort((a,b)=>(b.firstTs||b.ts||0)-(a.firstTs||a.ts||0)).slice(0,50);
   if(!recent.length){list.innerHTML=`<div class="recrow" style="cursor:default">nothing mapped yet</div>`;return;}
   recent.forEach(e=>{
     const d=document.createElement("div");d.className="recrow";
-    d.innerHTML=`<b><span>${e.name||e.host}</span><span class="ago">${timeAgo(e.ts)}</span></b>
+    d.innerHTML=`<b><span>${e.name||e.host}</span><span class="ago">${timeAgo(e.firstTs||e.ts)}</span></b>
       <span>${[e.city,e.country].filter(Boolean).join(", ")||e.ip}</span>`;
     d.addEventListener("click",()=>{
       setFocusOwner("log"); // turns the URL-search results down
